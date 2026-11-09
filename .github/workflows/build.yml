@@ -1,0 +1,50 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Build — jar, compatScan/verifyJar gates, all test lanes
+        run: ./gradlew build
+
+      - name: Resolve version
+        run: |
+          version="$(./gradlew -q properties --property version | sed -n 's/^version: //p')"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: retrodfu-${{ env.version }}
+          path: build/libs/retrodfu-${{ env.version }}.jar
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build reports on failure
+        uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: build-reports
+          path: |
+            build/reports/
+            build-logic/build/reports/
+          retention-days: 7

@@ -46,7 +46,7 @@ git clone --recurse-submodules https://github.com/morphismx/RetroDFU.git
 
 对于已克隆的仓库，运行 `git submodule update --init`。
 
-构建需要 JDK 8 和 JDK 25，并通过环境变量 `JAVA8_HOME` 与 `JAVA25_HOME` 指定路径。Gradle 不会自动下载 JDK。
+请使用 JDK 25 运行 Gradle；测试所需的 Java 8 工具链会自动下载。
 
 ```sh
 ./gradlew build
