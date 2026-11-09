@@ -1,0 +1,43 @@
+[versions]
+asm = "9.11.1"
+jvmdg = "2.0.1"
+animalSniffer = "1.29"
+java18Signature = "1.0"
+junit = "4.13.2"
+hamcrest = "3.0"
+slf4j = "2.0.9" # slf4j-simple for the JDK-native test lane only
+
+mc1710-gson = "2.2.4"
+mc1710-guava = "17.0"
+mc1710-log4j = "2.0-beta9"
+mc1122-gson = "2.8.0"
+mc1122-guava = "21.0"
+mc1122-log4j = "2.8.1"
+mc1122-fastutil = "7.1.0" # 1.12.2 ships it; 1.7.10 ships none — the floor downstreams must supply
+
+[libraries]
+asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
+asm-commons = { module = "org.ow2.asm:asm-commons", version.ref = "asm" }
+
+jvmdg-java-api = { module = "xyz.wagyourtail.jvmdowngrader:jvmdowngrader-java-api", version.ref = "jvmdg" }
+
+junit = { module = "junit:junit", version.ref = "junit" }
+hamcrest = { module = "org.hamcrest:hamcrest", version.ref = "hamcrest" }
+slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
+
+animalSniffer = { module = "org.codehaus.mojo:animal-sniffer", version.ref = "animalSniffer" }
+java18Signature = { module = "org.codehaus.mojo.signature:java18", version.ref = "java18Signature" }
+
+mc1710-gson = { module = "com.google.code.gson:gson", version.ref = "mc1710-gson" }
+mc1710-guava = { module = "com.google.guava:guava", version.ref = "mc1710-guava" }
+mc1710-log4j-api = { module = "org.apache.logging.log4j:log4j-api", version.ref = "mc1710-log4j" }
+mc1710-log4j-core = { module = "org.apache.logging.log4j:log4j-core", version.ref = "mc1710-log4j" }
+
+mc1122-gson = { module = "com.google.code.gson:gson", version.ref = "mc1122-gson" }
+mc1122-guava = { module = "com.google.guava:guava", version.ref = "mc1122-guava" }
+mc1122-log4j-api = { module = "org.apache.logging.log4j:log4j-api", version.ref = "mc1122-log4j" }
+mc1122-log4j-core = { module = "org.apache.logging.log4j:log4j-core", version.ref = "mc1122-log4j" }
+mc1122-fastutil = { module = "it.unimi.dsi:fastutil", version.ref = "mc1122-fastutil" }
+
+[plugins]
+jvmdg = { id = "xyz.wagyourtail.jvmdowngrader", version.ref = "jvmdg" }
