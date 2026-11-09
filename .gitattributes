@@ -1,0 +1,10 @@
+# Normalize text to LF in the repo; check out with native line endings.
+* text=auto
+
+# Batch scripts need CRLF on Windows; shell scripts must stay LF.
+*.bat   text eol=crlf
+*.sh    text eol=lf
+gradlew text eol=lf
+
+# Never treat jars as text (gradle-wrapper.jar is committed).
+*.jar binary

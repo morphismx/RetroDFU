@@ -1,0 +1,19 @@
+### Gradle ###
+.gradle/
+/build/
+/build-logic/build/
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+
+### VS Code ###
+.vscode/
+
+### Devin ###
+.devin/
+
+### Mac OS ###
+.DS_Store
