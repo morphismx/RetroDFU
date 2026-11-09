@@ -5,8 +5,10 @@ Maintainer notes for RetroDFU. User-facing docs are in `README.md` and `README.z
 ## Environment
 
 - JDK 25 builds and runs the native test lane. JDK 8 runs the retro lanes.
-- Gradle finds JDKs only through `JAVA8_HOME` / `JAVA_HOME_8_X64` and `JAVA25_HOME` / `JAVA_HOME_25_X64`. Auto-download
-  is off (`gradle.properties`). Build cache and configuration cache are on, so task inputs/outputs must stay declared.
+- Toolchains resolve via auto-detection; the foojay resolver (`settings.gradle.kts`) auto-downloads what's missing —
+  for the root build only, which is what covers the Java 8 lanes. Included builds resolve toolchains independently,
+  so `upstream/`'s JDK 25 toolchain must already be installed: run Gradle on JDK 25 or keep one auto-detectable.
+  Build cache and configuration cache are on, so task inputs/outputs must stay declared.
 - Dependency versions live in `gradle/libs.versions.toml`; the project version (`version = "11.0.22"`, the DFU release
   it corresponds to) is in `build.gradle.kts`. DFU's own dependency versions come from the `upstream/` included build;
   never hand-copy them.
