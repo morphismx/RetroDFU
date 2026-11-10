@@ -12,6 +12,8 @@ dependencies {
     implementation(libs.asm)
     implementation(libs.asm.commons)
     implementation(libs.animalSniffer)
+    implementation(libs.classtransform.core)
+    implementation(libs.gson)
     testImplementation(libs.junit) {
         // junit:junit drags hamcrest-core:1.3 along transitively;
         // hamcrest:3.0 already contains every hamcrest-core class.

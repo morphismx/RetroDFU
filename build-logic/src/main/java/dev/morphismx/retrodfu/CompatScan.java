@@ -23,8 +23,9 @@ import java.util.regex.Pattern;
  *   <li>Every class has major version 52 or lower, and neither
  *       {@code module-info} nor {@code META-INF/versions} is present.</li>
  *   <li>Forbidden reference strings ({@code org/slf4j}, unrelocated JvmDG
- *       classes, {@code java/lang/Record}, {@code StringConcatFactory}) occur
- *       only inside the JvmDG stub and relocated shadow trees.</li>
+ *       and ClassTransform classes, {@code java/lang/Record},
+ *       {@code StringConcatFactory}) occur only inside the JvmDG stub and
+ *       relocated shadow trees.</li>
  *   <li>Each member reference whose owner starts with an API prefix resolves
  *       in every baseline jar given for that prefix, such as gson 2.2.4 and
  *       2.8.0.</li>
@@ -50,6 +51,7 @@ public final class CompatScan {
     static final String[] FORBIDDEN = {
             "org/slf4j", "org.slf4j",
             "xyz/wagyourtail", "xyz.wagyourtail",
+            "net/lenni0451", "net.lenni0451",
             "java/lang/Record", "java/lang/runtime/", "StringConcatFactory",
     };
 
@@ -325,9 +327,10 @@ public final class CompatScan {
      * JvmDG stub tree.
      */
     static void checkForbidden(String entry, byte[] b, List<String> problems) {
-        // Our own classes name the types they replace in @Replaces strings.
-        // Real references to them are still caught by member resolution,
-        // which runs on every class.
+        // Our own classes legitimately carry the needles (the JvmDG stubs
+        // mention their unrelocated names, the transformer-facing docs name
+        // slf4j). Real references to them are still caught by member
+        // resolution, which runs on every class.
         if (entry.startsWith("dev/morphismx/retrodfu/")) return;
         String s = new String(b, StandardCharsets.ISO_8859_1);
         for (String needle : FORBIDDEN) {

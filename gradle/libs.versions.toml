@@ -1,10 +1,12 @@
 [versions]
 asm = "9.11.1"
+classtransform = "1.15.1"
 jvmdg = "2.0.1"
 animalSniffer = "1.29"
 java18Signature = "1.0"
 junit = "4.13.2"
 hamcrest = "3.0"
+gson = "2.11.0"
 slf4j = "2.0.9" # slf4j-simple for the JDK-native test lane only
 
 mc1710-gson = "2.2.4"
@@ -18,11 +20,13 @@ mc1122-fastutil = "7.1.0" # 1.12.2 ships it; 1.7.10 ships none — the floor dow
 [libraries]
 asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
 asm-commons = { module = "org.ow2.asm:asm-commons", version.ref = "asm" }
+classtransform-core = { module = "net.lenni0451.classtransform:core", version.ref = "classtransform" }
 
 jvmdg-java-api = { module = "xyz.wagyourtail.jvmdowngrader:jvmdowngrader-java-api", version.ref = "jvmdg" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
 hamcrest = { module = "org.hamcrest:hamcrest", version.ref = "hamcrest" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 
 animalSniffer = { module = "org.codehaus.mojo:animal-sniffer", version.ref = "animalSniffer" }

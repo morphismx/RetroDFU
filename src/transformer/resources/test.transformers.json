@@ -1,0 +1,9 @@
+{
+    "package": "dev.morphismx.retrodfu.transformer",
+    "bytecodeTransformers": [
+        "TypeRenameTransformer"
+    ],
+    "transformers": [
+        "CodecTestsTransformer"
+    ]
+}

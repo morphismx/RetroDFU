@@ -58,7 +58,8 @@ git clone --recurse-submodules https://github.com/morphismx/RetroDFU.git
 
 构建依次执行以下步骤：
 
-1. **`patchJar`**：将 slf4j 重命名为替代实现，并将较新的 Guava / fastutil 调用重定向到兼容类。
+1. **`patchJar`**：应用 [ClassTransform](https://github.com/Lenni0451/ClassTransform) 变换器——将 slf4j
+   重命名为替代实现，并将较新的 Guava / fastutil 调用重定向到兼容类。
 2. **`downgradeJar`**：将字节码转换为 Java 8，并将 JDK 9+ 的 API 调用替换为桩代码。
 3. **`shadeDowngradedApi`**：将桩代码重定位到 `dev.morphismx.retrodfu.shadow.jvmdg`。
 4. **`compatScan`**：验证 jar 中的所有引用在两个游戏版本的依赖上均可解析。

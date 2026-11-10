@@ -27,32 +27,48 @@ Maintainer notes for RetroDFU. User-facing docs are in `README.md` and `README.z
 ./gradlew compatScan             # jar gate only; report in build/reports/retro/compat-scan.txt
 ./gradlew testMc1122             # one lane (testMc1710; plain `test` = JDK 25 control)
 ./gradlew testMc1122 --tests '*RoundtripTest'    # one upstream test class in a lane
-./gradlew -p build-logic test    # unit tests of ClassPatcher / PatchSpec / CompatScan
+./gradlew -p build-logic test    # CompatScan unit tests
 ./gradlew publishToMavenLocal
 ```
 
 ## Layout
 
-- `src/main/java/dev/morphismx/retrodfu/annotation/`: the patch annotations (`@Replaces` = whole-type rename,
-  `@Redirect` = call-site retarget to a static handler).
-- `src/main/java/dev/morphismx/retrodfu/guava/`, `.../fastutil/`: the `@Redirect` handlers, one `*Compat` class per
-  patched target type. They compile on JDK 25 against the oldest game deps (gson 2.2.4, guava 17.0, fastutil 7.1.0,
-  log4j-api 2.0-beta9) as `compileOnly`, so only members that exist on every supported game version resolve; the
-  classes are then downgraded together with the rest of the jar. CompatScan re-checks this against the baselines.
+- `src/main/java/dev/morphismx/retrodfu/guava/GuavaCompat`, `.../fastutil/FastutilCompat`: the compatibility
+  implementations, one class per third-party library. They compile on JDK 25 against the oldest game deps
+  (gson 2.2.4, guava 17.0, fastutil 7.1.0, log4j-api 2.0-beta9) as `compileOnly`, so only members that exist on
+  every supported game version resolve; the classes are then downgraded together with the rest of the jar.
+  CompatScan re-checks this against the baselines.
 - `src/main/java/dev/morphismx/retrodfu/slf4j/`: the slf4j replacement (`Logger`, `LoggerFactory`, `LoggerImpl`
-  forwarding to log4j2), each marked `@Replaces`. Same compile baselines.
+  forwarding to log4j2), swapped in by `TypeRenameTransformer`'s rename map. Same compile baselines.
+- `src/transformer/java/dev/morphismx/retrodfu/transformer/`: the ClassTransform transformer classes
+  (`net.lenni0451.classtransform:core`, mixin style) in one flat package. Each affected DFU class gets a
+  `@CTransformer` abstract class whose `@CRedirect` methods forward once to a `GuavaCompat`/`FastutilCompat`
+  static method; the transformer itself must hold no fields or helpers, because every non-annotation member is
+  copied into the target class — shared `@CTarget` descriptors therefore live in `Targets`, whose compile-time
+  constants inline into the annotation. `TypeRenameTransformer` is the other kind: an `IBytecodeTransformer` the
+  patcher instantiates and runs on every class ahead of injection (slf4j type renames).
+  `src/transformer/resources/*.transformers.json` are mixin-style configs
+  (`package` + `bytecodeTransformers`/`transformers` lists) — `patchJar` uses `dfu.transformers.json`,
+  `testPatch` `test.transformers.json`, so each task patches only the classes its list names. The
+  source set compiles against the same `compileOnly` baselines as main plus ClassTransform core, and is never
+  merged into the jar.
 - `src/main/resources/META-INF/licenses/`: licenses of everything bundled.
-- `upstream/`: see above. Its `src/test/java` (`CodecTests`, `RoundtripTest`) is the project's whole test tree; treat it
-  as read-only (it's upstream's checkout — handwritten tests have nowhere to live).
+- `upstream/`: see above. Its `src/test/java` (`CodecTests`, `RoundtripTest`) is upstream's checkout, compiled
+  in place as the `upstreamTest` source set against upstream's real dependencies. Our own tests live in
+  `src/test/java` (the `test` source set): the `GuavaCompat`/`FastutilCompat` unit tests, which compile against
+  the same old-API baselines as main — members absent on any lane's deps fail at compile time. Every lane runs
+  both trees, so the retro lanes also exercise the compat classes against the real old baselines.
 - `build-logic/`: included build providing the `retrodfu` plugin (`RetroDFUPlugin` is an empty marker; it only puts the
   task types on the build-script classpath).
-    - `patch/ClassPatcher`: ASM patcher. Scans the input jar (plus `patches` jars) for the patch annotations, then
-      applies type renames (`ClassRemapper`) and call-site redirects (`INVOKESTATIC` to the handler) in one pass.
-      Handlers that never matched are logged as a warning; a misspelled descriptor leaves the call untouched, which
-      CompatScan then reports.
-    - `patch/PatchSpec`: reads the `@Replaces`/`@Redirect` attributes off class bytes and validates handler signatures.
+    - `ClassPatcher`: runs a ClassTransform `TransformerManager` over the input. The config's
+      `bytecodeTransformers` are instantiated through a classloader over the transformer roots and rewrite
+      every class ahead of everything else (type renames); the `@CTransformer` classes listed by the task's
+      `transformerConfig` JSON retarget their annotated call sites; a post-transformer strips the injected
+      `InjectionInfo`/ClassTransform annotations from transformed classes. A custom `IClassProvider` reads the
+      input roots and the task classpath for frame computation, falling back to the JDK.
     - `CompatScan`: the jar checks behind `compatScan` (the Gradle wrapper is `task/CompatScan`).
-    - `task/`: Gradle task wrappers (`PatchJar`/`PatchFiles`, `CompatScan`, `AnimalSniffer`).
+    - `task/`: Gradle task wrappers (`PatchJar`/`PatchFiles` sharing the `PatchTask` input interface,
+      `CompatScan`, `AnimalSniffer`).
     - Unit tests in `build-logic/src/test/`; run with `./gradlew -p build-logic test`.
 - `build.gradle.kts`: registers every pipeline task directly so inputs and outputs stay visible.
 - `.devin/rules/comment.md`: commenting standard — comments explain why, public API gets Javadoc, no comments that
@@ -61,10 +77,10 @@ Maintainer notes for RetroDFU. User-facing docs are in `README.md` and `README.z
 ## Pipeline
 
 ```
-patchJar             ClassPatcher over the upstream jar — @Replaces type
-                       renames (slf4j -> ours) + @Redirect retargets
-                       (new-guava/fastutil members -> the guava/ and
-                       fastutil/ *Compat classes) — repacked with our classes
+patchJar             ClassTransform over the upstream jar — type renames
+                       (slf4j -> ours) + @CRedirect retargets (newer
+                       guava/fastutil members -> GuavaCompat/FastutilCompat)
+                       — repacked with our classes
                        + licenses merged in
   -> downgradeJar      JvmDG: class major 69 -> 52, JDK 9+ API calls -> stubs
   -> shadeDowngradedApi  JvmDG api stubs shaded under dev/morphismx/retrodfu/shadow/jvmdg
@@ -72,25 +88,28 @@ patchJar             ClassPatcher over the upstream jar — @Replaces type
 ```
 
 - The rewrite covers invokes, fields, types, descriptors, signatures, invokedynamic and method handles. Type renames are
-  pure renames, which stay legal only because our `Logger` mirrors slf4j's interface shape. `@Redirect` handlers are
-  static methods: an instance call's receiver becomes the first argument. A handler that never matched a call site
-  (misspelled descriptor, or an upstream call that went away) is logged as a warning; the test classes exercise only
-  part of the handler set, so a few warnings there are expected.
-- Redirect matching is on the call's literal owner: calls through a subtype owner, INVOKESPECIAL, and method references
-  inside invokedynamic are never retargeted — CompatScan catches whatever stays unresolved.
+  pure renames, which stay legal only because our `Logger` mirrors slf4j's interface shape. `@CRedirect` pins a call
+  site by containing method plus exact owner/name/descriptor; the handler is copied into the target class and an
+  instance call's receiver becomes its first argument. A misspelled method or missing call site fails the build,
+  and every registered transformer target must appear in the input — there is no "never matched" warning anymore.
+- Redirect matching is on the call's literal owner and descriptor: calls through a subtype owner, INVOKESPECIAL, and
+  method references inside invokedynamic are never retargeted — CompatScan catches whatever stays unresolved.
 - Nothing is bundled: guava is provided by the game (17.0/21.0), fastutil is provided by 1.12.2 (7.1.0) while 1.7.10
   ships none — the README tells downstreams to supply it there. The DFU call sites that postdate those baselines are
-  redirected to the `guava`/`fastutil` patch classes, which stick to guava-17 / fastutil-7.1.0 APIs.
+  redirected to GuavaCompat/FastutilCompat, which stick to guava-17 / fastutil-7.1.0 APIs.
 - `patchJar` sits ahead of JvmDG's default chain rather than spliced inside it: it patches the raw upstream
-  jar (rules scanned from `patches`, which points at the `jar` task's output — our classes jar, built with classifier
-  `patches`, since the input jar carries no patch classes), then merges the patched jar with our classes and licenses
-  via `from`/`copy()`, the same shape JvmDG's own `DowngradeJar`/`ShadeJar` use. Only `downgradeJar`'s `inputFile`
-  is overridden; `shadeDowngradedApi` keeps its default input and has an empty classifier, so its output is the final
-  `retrodfu-<version>.jar`. Task names match their val names and carry no `retro` prefix — the whole build is retro.
-- The test classes go through the same pipeline in directory form (`testDowngrade` = `DowngradeFiles`, then
-  `testPatch` = `PatchFiles` over `sourceSets.test.output`, written to `build/retrotest`), so every retro lane runs
-  downgraded and relocated code without a jar round-trip. JvmDG stub calls resolve from the
-  `jvmdowngrader-java-api:downgraded-8` jar on `retroTestRuntime` — no shading step.
+  jar (transformers read from the `transformer` source set's `dfu/` package, since the input jar carries none), then
+  merges the patched jar with our classes and licenses via `from`/`copy()`, the same shape JvmDG's own
+  `DowngradeJar`/`ShadeJar` use. Only `downgradeJar`'s `inputFile` is overridden; `shadeDowngradedApi` keeps its
+  default input and has an empty classifier, so its output is the final `retrodfu-<version>.jar`. Task names match
+  their val names and carry no `retro` prefix — the whole build is retro.
+- Both test trees go through the same pipeline in directory form (`testDowngrade` = `DowngradeFiles` over the
+  `test` and `upstreamTest` outputs, then `testPatch` = `PatchFiles` over the downgraded tree with
+  `test.transformers.json`, written to `build/retrotest`), so every retro lane runs downgraded and relocated
+  code without a jar round-trip. JvmDG stub calls resolve from the `jvmdowngrader-java-api:downgraded-8` jar on
+  `retroTestRuntime` — no shading step.
+- `patchClasspath` resolves `com.mojang:datafixerupper` transitively so ClassTransform's frame computer sees the DFU
+  dependencies; the test side uses the test compile classpath plus main output instead.
 
 ## Gates (all part of `check`)
 
@@ -100,8 +119,9 @@ patchJar             ClassPatcher over the upstream jar — @Replaces type
   `META-INF/`;
 - a class exceeds major 52, or `module-info` / `META-INF/versions` is present;
 - forbidden references remain outside the shadow trees (our own `dev/morphismx/retrodfu/` classes are exempt from the
-  string match, since `@Replaces` names the types it replaces): `org/slf4j`, unrelocated `xyz/wagyourtail`,
-  `java/lang/Record`, `java/lang/runtime/`, `StringConcatFactory`;
+  string match, since the JvmDG stubs name their unrelocated selves and javadocs name slf4j): `org/slf4j`,
+  unrelocated `xyz/wagyourtail`, `net/lenni0451` (ClassTransform leftovers — its annotations must never reach the
+  jar), `java/lang/Record`, `java/lang/runtime/`, `StringConcatFactory`;
 - a gson member ref doesn't resolve on both gson 2.2.4 (1.7.10) and 2.8.0 (1.12.2), a guava member ref doesn't resolve
   on both guava 17.0 and 21.0, a fastutil member ref doesn't resolve on fastutil 7.1.0, or a log4j member ref doesn't
   resolve on both log4j-api 2.0-beta9 and 2.8.1;
@@ -114,7 +134,7 @@ The report goes to `build/reports/retro/compat-scan.txt`.
 
 ## Test matrix
 
-Each lane runs upstream's `CodecTests` and `RoundtripTest`:
+Each lane runs upstream's `CodecTests` and `RoundtripTest` plus the `src/test/java` compat unit tests:
 
 - `test`: JDK 25, unmodified upstream binary. The control.
 - `testMc1122`, `testMc1710`: final jar on Java 8 with each game's gson/guava/log4j/fastutil (the
