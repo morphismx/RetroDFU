@@ -1,0 +1,20 @@
+{
+    "package": "dev.morphismx.retrodfu.transformer",
+    "bytecodeTransformers": [
+        "TypeRenameTransformer"
+    ],
+    "transformers": [
+        "DataFixerUpperTransformer",
+        "FixedMapBuilderTransformer",
+        "JavaOpsTransformer",
+        "MapBuilderTransformer",
+        "OpticTransformer",
+        "RecursiveCodecTransformer",
+        "RecursiveMapCodecTransformer",
+        "RecursiveTypeFamilyTransformer",
+        "SchemaTransformer",
+        "TaggedChoiceTransformer",
+        "TaggedChoiceTypeTransformer",
+        "TypedOpticTransformer"
+    ]
+}

@@ -30,6 +30,46 @@ val patchTarget = configurations.create("patchTarget") {
     attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named<Usage>(Usage.JAVA_RUNTIME))
 }
 
+// Resolvable view of the DFU runtime classpath: patchJar feeds it to
+// ClassTransform's frame computer, which must see the same dependencies the
+// classes it rewrites were compiled against.
+val patchClasspath = configurations.create("patchClasspath") {
+    isCanBeConsumed = false
+    attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named<Usage>(Usage.JAVA_RUNTIME))
+}
+
+// The transformer source set sits beside main/test: one flat package holds
+// the @CTransformer classes for the DFU jar and the downgraded test classes
+// plus the bytecode transformers they instantiate, and each patch task picks
+// its subset through the mixin-style JSON configs in
+// src/transformer/resources. It compiles against the same old-API baselines
+// as main, sees main's output for the GuavaCompat/FastutilCompat forwards,
+// and never depends on DFU itself — target class names travel as annotation
+// strings. Declared before `dependencies` so `transformerCompileOnly` exists
+// when the dependency block references it.
+sourceSets {
+    create("transformer") {
+        java.srcDir("src/transformer/java")
+        compileClasspath += sourceSets.main.get().output
+    }
+    // Upstream's own test tree lives apart from `test`: it is upstream code
+    // compiled against upstream's real dependencies, while `test`
+    // (src/test/java) sees only the same old-API baselines as main — so test
+    // code can only reference members that exist on every lane's deps.
+    create("upstreamTest") {
+        java.srcDir("upstream/src/test/java")
+    }
+}
+configurations.named("transformerCompileOnly") {
+    extendsFrom(configurations.compileOnly.get())
+}
+// testCompileOnly does not extend compileOnly by default; wire it so the
+// compat unit tests see the same old-API baseline as main. Only compile —
+// at runtime the lanes supply their own dependency sets.
+configurations.named("testCompileOnly") {
+    extendsFrom(configurations.compileOnly.get())
+}
+
 // A resolvable, non-transitive bucket.
 fun detached(name: String) = configurations.create(name) {
     isCanBeConsumed = false
@@ -52,6 +92,7 @@ configurations.configureEach {
 
 dependencies {
     "patchTarget"("com.mojang:datafixerupper")
+    "patchClasspath"("com.mojang:datafixerupper")
 
     // The patch classes compile against the oldest supported game dependencies,
     // so every member they use exists on all supported Minecraft versions.
@@ -61,13 +102,21 @@ dependencies {
     compileOnly(libs.mc1710.log4j.api)
     compileOnly(libs.mc1122.fastutil)
 
+    // ClassTransform annotations are compile-time only: the @CTransformer
+    // classes are consumed as bytecode, while the bytecode transformers are
+    // instantiated inside the patch tasks. None of it reaches the jar.
+    "transformerCompileOnly"(libs.classtransform.core)
+
     // The JDK 25 test lane runs the unmodified upstream build as the control.
     // The substituted project brings gson, guava, fastutil, jspecify and
     // slf4j-api along through its variants.
-    testImplementation("com.mojang:datafixerupper")
+    "upstreamTestImplementation"("com.mojang:datafixerupper")
+    "upstreamTestImplementation"(libs.junit)
+    "upstreamTestImplementation"(libs.hamcrest)
+    "upstreamTestRuntimeOnly"(libs.slf4j.simple)
+
     testImplementation(libs.junit)
     testImplementation(libs.hamcrest)
-    testRuntimeOnly(libs.slf4j.simple)
 
     "retroTestRuntime"(libs.junit)
     "retroTestRuntime"(libs.hamcrest)
@@ -94,17 +143,19 @@ dependencies {
 
 val retroGroup = "retrodfu"
 
-// The rules jar gets its own name: with the default empty classifier it
+// The classes jar gets its own name: with the default empty classifier it
 // would share retrodfu-<version>.jar with the shaded artifact.
-val rulesJar = tasks.named<Jar>("jar") {
-    archiveClassifier = "patches"
+val classesJar = tasks.named<Jar>("jar") {
+    archiveClassifier = "classes"
 }
 
 val patchJar = tasks.register<PatchJar>("patchJar") {
     group = retroGroup
-    description = "Patches the upstream jar and merges in the patch classes"
+    description = "Patches the upstream jar with ClassTransform and merges in the compat classes"
     inputFile.fileProvider(patchTarget.elements.map { it.single().asFile })
-    patches = rulesJar.flatMap { it.archiveFile }
+    transformers.from(sourceSets["transformer"].output)
+    transformerConfig = "dfu.transformers.json"
+    classpath.from(patchClasspath, sourceSets.main.get().output)
     archiveClassifier = "patched"
     from(sourceSets.main.get().output)
 }
@@ -164,19 +215,26 @@ val verifyJar = tasks.register<AnimalSniffer>("verifyJar") {
     reportFile = layout.buildDirectory.file("reports/retro/verify-stamp.txt")
 }
 
-sourceSets.test {
-    java.setSrcDirs(listOf("upstream/src/test/java"))
+tasks.named<Test>("test") {
+    // The control lane runs our compat tests (test source set, old-API
+    // compile baselines) and upstream's tree (upstreamTest) together on the
+    // modern upstream dependencies.
+    testClassesDirs = files(sourceSets.test.get().output, sourceSets["upstreamTest"].output)
+    classpath = files(sourceSets.test.get().runtimeClasspath,
+                      sourceSets["upstreamTest"].runtimeClasspath)
 }
 
 val testDowngrade = tasks.register<DowngradeFiles>("testDowngrade") {
     group = retroGroup
     description = "Downgrades the test classes to Java 8 bytecode"
-    inputCollection = sourceSets.test.get().output
-    classpath = sourceSets.test.get().compileClasspath
-    // Each input root lands at temporaryDir/<input-name>, and the source-set
-    // dirs are all named "test". DowngradeFiles registers no output for a
-    // root that doesn't exist at configuration time, so declare it here.
+    inputCollection = files(sourceSets.test.get().output, sourceSets["upstreamTest"].output)
+    classpath = files(sourceSets.test.get().compileClasspath,
+                      sourceSets["upstreamTest"].compileClasspath)
+    // Each input root lands at temporaryDir/<input-name>. DowngradeFiles
+    // registers no output for a root that doesn't exist at configuration
+    // time, so declare them here.
     outputs.dir(temporaryDir.resolve("test"))
+    outputs.dir(temporaryDir.resolve("upstreamTest"))
 }
 
 val testPatch = tasks.register<PatchFiles>("testPatch") {
@@ -184,9 +242,14 @@ val testPatch = tasks.register<PatchFiles>("testPatch") {
     description = "Applies the same patch rules to the test classes"
     inputDirs.from(testDowngrade)
     outputDir = layout.buildDirectory.dir("retrotest")
-    // The test classes carry no patch classes; the rules come from our
-    // classes jar, as they do for patchJar.
-    patches = rulesJar.flatMap { it.archiveFile }
+    transformers.from(sourceSets["transformer"].output)
+    transformerConfig = "test.transformers.json"
+    // The frame computer sees both test trees' compile classpaths — the
+    // upstream build's test dependencies plus our old-API baselines — and our
+    // compat classes, which the test transformers' handler bodies call into.
+    classpath.from(sourceSets.test.get().compileClasspath,
+                   sourceSets["upstreamTest"].compileClasspath,
+                   sourceSets.main.get().output)
 }
 
 tasks.withType<Test>().configureEach {

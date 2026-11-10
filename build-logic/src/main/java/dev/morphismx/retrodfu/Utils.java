@@ -1,8 +1,5 @@
 package dev.morphismx.retrodfu;
 
-/**
- * Internal-name munging shared by the patch machinery.
- */
 public final class Utils {
 
     private Utils() {
