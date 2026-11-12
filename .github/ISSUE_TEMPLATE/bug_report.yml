@@ -1,0 +1,53 @@
+name: Bug report
+description: Wrong classes, crashes, or missing methods at runtime or build time
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: RetroDFU version
+      placeholder: e.g. 11.0.22
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mc-version
+    attributes:
+      label: Minecraft version
+      options: ["1.7.10", "1.12.2"]
+    validations:
+      required: true
+
+  - type: input
+    id: deps
+    attributes:
+      label: Runtime dependency versions
+      description: guava / fastutil / gson / log4j — check your modpack or `gradle dependencies`
+      placeholder: e.g. guava 17.0, fastutil 7.1.0, gson 2.2.4
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Exception, stack trace, and which codec / DataFixer call triggered it
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: false
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal repro
+      description: Code snippet or steps
+      render: java
+    validations:
+      required: true
