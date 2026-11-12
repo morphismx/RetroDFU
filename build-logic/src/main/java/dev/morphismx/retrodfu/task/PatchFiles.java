@@ -1,12 +1,11 @@
 package dev.morphismx.retrodfu.task;
 
 import dev.morphismx.retrodfu.ClassPatcher;
+import java.io.IOException;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.tasks.*;
-
-import java.io.IOException;
 
 /**
  * Directory-tree variant of {@link PatchJar}: every file under
@@ -26,8 +25,10 @@ public abstract class PatchFiles extends DefaultTask implements PatchTask {
 
     @TaskAction
     public void run() throws IOException {
-        new ClassPatcher(getTransformers().getFiles(), getTransformerConfig().get(),
-                getClasspath().getFiles())
+        new ClassPatcher(
+                        getTransformers().getFiles(),
+                        getTransformerConfig().get(),
+                        getClasspath().getFiles())
                 .patchDirs(getInputDirs().getFiles(), getOutputDir().get().getAsFile());
     }
 }

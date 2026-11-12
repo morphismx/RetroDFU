@@ -1,0 +1,48 @@
+# Devin snapshot-setup blueprint: each cloud session lands on a VM with a
+# Temurin 25 JDK, the initialized upstream submodule and warm Gradle caches,
+# so `./gradlew build` works out of the box. Register and verify via the
+# declarative-repo-setup flow: `devin.exe cloud drs blueprint-create
+# --repo morphismx/RetroDFU --from-file environment.yaml`, then `drs build`.
+initialize:
+  # JDK 25 in a Gradle-auto-detectable location. It launches the Gradle daemon
+  # (open-java-format's Spotless step needs 21+) and satisfies the upstream/
+  # included build's toolchain — included builds resolve toolchains
+  # independently of the root build's foojay auto-download.
+  - run: |
+      set -euo pipefail
+      mkdir -p /usr/lib/jvm
+      curl -fsSL "https://api.adoptium.net/v3/binary/latest/25/ga/linux/x64/jdk/hotspot/normal/eclipse" \
+        | tar -xz -C /usr/lib/jvm
+      mv /usr/lib/jvm/jdk-25* /usr/lib/jvm/temurin-25
+      ln -sf /usr/lib/jvm/temurin-25/bin/java /usr/local/bin/java
+      ln -sf /usr/lib/jvm/temurin-25/bin/javac /usr/local/bin/javac
+      java -version
+
+  # upstream/ is a pinned git submodule — a fresh clone builds nothing until it
+  # is checked out. `build` additionally warms the Gradle caches into the
+  # snapshot, including the Java 8 toolchain foojay fetches for the retro lanes.
+  - run: |
+      set -euo pipefail
+      git submodule update --init --recursive
+      ./gradlew build --console=plain
+
+maintenance:
+  # Idempotent: keeps the submodule checked out when a session later fetches or
+  # switches branches.
+  - run: |
+      git submodule update --init --recursive
+
+knowledge:
+  - name: lint
+    contents: |
+      ./gradlew spotlessCheck      # open-java-format gate; also part of `check`
+      ./gradlew formatDiff         # fix only the lines in `git diff HEAD`
+      ./gradlew spotlessApply      # reformat everything (src/ + build-logic/src/)
+  - name: test
+    contents: |
+      ./gradlew check              # every gate + build-logic tests + all lanes
+      ./gradlew testMc1122         # one Java 8 lane (testMc1710; `testUpstream` = JDK 25 control)
+  - name: startup
+    contents: |
+      Library project — nothing to launch. `./gradlew shadeDowngradedApi`
+      produces the artifact at build/libs/retrodfu-<version>.jar

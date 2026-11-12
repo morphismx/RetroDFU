@@ -1,4 +1,4 @@
-package dev.morphismx.retrodfu.transformer;
+package dev.morphismx.retrodfu;
 
 /**
  * {@code @CTarget} call-site descriptors shared by more than one transformer.
@@ -19,6 +19,5 @@ final class Targets {
     static final String TO_IMMUTABLE_MAP =
             "Lcom/google/common/collect/ImmutableMap;toImmutableMap(Ljava/util/function/Function;Ljava/util/function/Function;)Ljava/util/stream/Collector;";
 
-    private Targets() {
-    }
+    private Targets() {}
 }

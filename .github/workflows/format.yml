@@ -1,0 +1,19 @@
+name: format
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: openjavaformat/open-java-format-action@v4
+        with:
+          mode: ${{ github.event_name == 'push' && 'all' || 'changed' }}

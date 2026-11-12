@@ -6,8 +6,7 @@ package dev.morphismx.retrodfu.slf4j;
  */
 public final class LoggerFactory {
 
-    private LoggerFactory() {
-    }
+    private LoggerFactory() {}
 
     public static Logger getLogger(String name) {
         return new LoggerImpl(name);

@@ -1,15 +1,14 @@
 package dev.morphismx.retrodfu.task;
 
 import dev.morphismx.retrodfu.ClassPatcher;
+import java.io.*;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+import javax.inject.Inject;
 import org.gradle.api.file.ArchiveOperations;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.tasks.*;
 import org.gradle.api.tasks.bundling.Jar;
-
-import javax.inject.Inject;
-import java.io.*;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
 
 /**
  * Rewrites {@link #getInputFile()} with {@link ClassPatcher#patchJar} and then
@@ -21,7 +20,7 @@ import java.util.jar.JarFile;
  * <p>Shaped after JvmDG's jar tasks: transform to a temp jar, carry the input
  * manifest into this task's own, then {@code from(zipTree(temp))} +
  * {@code copy()}. {@code module-info.class} and {@code META-INF/versions/**}
- * are dropped at the repack: a Java 8 jar has no use for them and CompatScan
+ * are dropped at the repack: a Java 8 jar has no use for them and scanJar
  * forbids them.
  */
 @CacheableTask
@@ -41,8 +40,10 @@ public abstract class PatchJar extends Jar implements PatchTask {
             throw new IOException("Failed to delete existing temp output file: " + tempOutput);
         }
 
-        new ClassPatcher(getTransformers().getFiles(), getTransformerConfig().get(),
-                getClasspath().getFiles())
+        new ClassPatcher(
+                        getTransformers().getFiles(),
+                        getTransformerConfig().get(),
+                        getClasspath().getFiles())
                 .patchJar(getInputFile().get().getAsFile(), tempOutput);
 
         // Carry the input's manifest into this task's own, as JvmDG does, and
@@ -52,7 +53,7 @@ public abstract class PatchJar extends Jar implements PatchTask {
             if (mf != null) {
                 File tmp = tempFile("input-manifest.MF");
                 try (InputStream in = jf.getInputStream(mf);
-                     OutputStream out = new FileOutputStream(tmp)) {
+                        OutputStream out = new FileOutputStream(tmp)) {
                     in.transferTo(out);
                 }
                 getManifest().from(tmp);

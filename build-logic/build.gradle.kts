@@ -1,5 +1,13 @@
 plugins {
     `java-gradle-plugin`
+    alias(libs.plugins.spotless)
+    alias(libs.plugins.openjavaformat)
+}
+
+spotless {
+    java {
+        target("src/**/*.java")
+    }
 }
 
 group = "dev.morphismx.retrodfu"
@@ -13,6 +21,7 @@ dependencies {
     implementation(libs.asm.commons)
     implementation(libs.animalSniffer)
     implementation(libs.classtransform.core)
+    implementation(libs.classtransform.additionalclassprovider)
     implementation(libs.gson)
     testImplementation(libs.junit) {
         // junit:junit drags hamcrest-core:1.3 along transitively;
@@ -24,7 +33,7 @@ dependencies {
 
 gradlePlugin {
     plugins {
-        create("retroTools") {
+        create("retrodfu") {
             id = "retrodfu"
             implementationClass = "dev.morphismx.retrodfu.RetroDFUPlugin"
         }

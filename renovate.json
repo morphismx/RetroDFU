@@ -1,0 +1,55 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "prConcurrentLimit": 5,
+  "packageRules": [
+    {
+      "description": "Keep Gradle Wrapper aligned with upstream",
+      "matchManagers": ["gradle-wrapper"],
+      "enabled": false
+    },
+    {
+      "description": "Keep legacy Minecraft dependencies pinned",
+      "matchManagers": ["gradle"],
+      "matchJsonata": [
+        "$matchRegexOrGlob(sharedVariableName, \"/^mc(1710|1122)\\\\./\")"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Wait for Maven releases to mature",
+      "matchDatasources": ["maven"],
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Group OpenJavaFormat Gradle plugin and formatter updates",
+      "matchPackageNames": [
+        "dev.openjavaformat.java-format:dev.openjavaformat.java-format.gradle.plugin",
+        "openjavaformat/open-java-format"
+      ],
+      "groupName": "OpenJavaFormat"
+    },
+    {
+      "description": "Require approval for major updates",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true,
+      "addLabels": ["major-update"]
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Keep OpenJavaFormat formatter version synchronized",
+      "managerFilePatterns": [
+        "/^\\.open-java-format-version$/"
+      ],
+      "matchStrings": [
+        "(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "open-java-format",
+      "packageNameTemplate": "openjavaformat/open-java-format",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    }
+  ]
+}

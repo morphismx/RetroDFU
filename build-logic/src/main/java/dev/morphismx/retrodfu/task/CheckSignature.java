@@ -1,5 +1,11 @@
 package dev.morphismx.retrodfu.task;
 
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import org.codehaus.mojo.animal_sniffer.ClassListBuilder;
 import org.codehaus.mojo.animal_sniffer.SignatureChecker;
 import org.codehaus.mojo.animal_sniffer.logging.Logger;
@@ -10,13 +16,6 @@ import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.SetProperty;
 import org.gradle.api.tasks.*;
 
-import java.io.*;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
-
 /**
  * Runs animal-sniffer's {@link SignatureChecker} on one jar: every referenced
  * API must exist in the signature file or in the extra API jars.
@@ -26,7 +25,7 @@ import java.util.Set;
  * signature.
  */
 @CacheableTask
-public abstract class AnimalSniffer extends DefaultTask {
+public abstract class CheckSignature extends DefaultTask {
 
     @InputFile
     @PathSensitive(PathSensitivity.NONE)
@@ -58,8 +57,7 @@ public abstract class AnimalSniffer extends DefaultTask {
     public void run() throws IOException {
         File jar = getInputJar().get().getAsFile();
         List<String> problems = new ArrayList<>();
-        // SignatureChecker reports violations through warn/error; collecting
-        // them is what the report file and the failure message print.
+        // Violations arrive via warn/error; collecting them feeds the report and failure message.
         Logger logger = new Logger() {
             public void info(String s) {
                 getLogger().info(s);
@@ -98,8 +96,7 @@ public abstract class AnimalSniffer extends DefaultTask {
             }
         };
 
-        // The packages of the API jars go into the ignore set too, as in the
-        // ant task. That is how classpath dependencies count as provided API.
+        // API-jar packages join the ignore set as in the ant task — that is what counts classpath deps as provided API.
         Set<String> ignores = new LinkedHashSet<>(getIgnores().get());
         ClassListBuilder packages = new ClassListBuilder(logger);
         packages.process(jar);
@@ -110,18 +107,26 @@ public abstract class AnimalSniffer extends DefaultTask {
         try (InputStream sig = new FileInputStream(getSignatureFile().get().getAsFile())) {
             SignatureChecker checker = new SignatureChecker(sig, ignores, logger);
             checker.setSourcePath(new ArrayList<>(getApiJars().getFiles()));
-            checker.process(new File[]{jar});
+            checker.process(new File[] {jar});
             broken = checker.isSignatureBroken();
         }
 
         File report = getReportFile().get().getAsFile();
+        File parent = report.getParentFile();
+        if (parent != null) parent.mkdirs();
         try (PrintWriter w = new PrintWriter(report, StandardCharsets.UTF_8)) {
-            w.println(broken ? "animal-sniffer FAILED (" + problems.size() + " violations)" : "animal-sniffer OK");
+            if (broken) {
+                w.println("checkSignature FAILED (" + problems.size() + " violations)");
+            } else if (!problems.isEmpty()) {
+                w.println("checkSignature WARNINGS (" + problems.size() + ")");
+            } else {
+                w.println("checkSignature OK");
+            }
             for (String p : problems) w.println("  - " + p);
         }
         if (broken) {
-            throw new GradleException("animal-sniffer failed (" + problems.size()
-                    + " violations, see " + report + "):\n - " + String.join("\n - ", problems));
+            throw new GradleException("checkSignature failed (" + problems.size() + " violations, see " + report
+                    + "):\n - " + String.join("\n - ", problems));
         }
         getLogger().lifecycle("{}: OK ({} bytes)", getName(), jar.length());
     }

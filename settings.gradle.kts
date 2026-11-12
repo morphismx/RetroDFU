@@ -2,6 +2,7 @@ pluginManagement {
     includeBuild("build-logic")
     repositories {
         gradlePluginPortal()
+        mavenCentral()
     }
 }
 
@@ -12,4 +13,4 @@ plugins {
 
 includeBuild("upstream")
 
-rootProject.name = "RetroDFU"
+rootProject.name = "retrodfu"

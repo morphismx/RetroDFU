@@ -3,7 +3,6 @@ package dev.morphismx.retrodfu.fastutil;
 import it.unimi.dsi.fastutil.ints.*;
 import it.unimi.dsi.fastutil.longs.*;
 import it.unimi.dsi.fastutil.objects.*;
-
 import java.util.Objects;
 import java.util.PrimitiveIterator;
 import java.util.Spliterator;
@@ -20,8 +19,7 @@ import java.util.stream.StreamSupport;
  */
 public final class FastutilCompat {
 
-    private FastutilCompat() {
-    }
+    private FastutilCompat() {}
 
     /**
      * Mirrors fastutil 8.5's {@code toList()} collector. It collects in
@@ -39,11 +37,10 @@ public final class FastutilCompat {
     }
 
     /**
-     * Mirrors fastutil 8's {@code intStream()}, a lazy view over the list built
-     * from {@code intSpliterator()}. fastutil 7.1.0 has no {@code IntSpliterator},
-     * and its {@code IntIterator} is not a {@code PrimitiveIterator}, so the
-     * iterator is adapted to {@code PrimitiveIterator.OfInt}. Laziness, order and
-     * size are preserved.
+     * Mirrors fastutil 8's {@code intStream()}. 7.1.0 has no
+     * {@code IntSpliterator} and its {@code IntIterator} is no
+     * {@code PrimitiveIterator}, so one is adapted; laziness, order and size
+     * are preserved.
      */
     public static IntStream intStream(IntList list) {
         IntIterator it = list.iterator();
@@ -59,9 +56,10 @@ public final class FastutilCompat {
             }
         };
         return StreamSupport.intStream(
-                Spliterators.spliterator(adapter, list.size(),
-                        Spliterator.ORDERED | Spliterator.SIZED | Spliterator.SUBSIZED
-                                | Spliterator.NONNULL),
+                Spliterators.spliterator(
+                        adapter,
+                        list.size(),
+                        Spliterator.ORDERED | Spliterator.SIZED | Spliterator.SUBSIZED | Spliterator.NONNULL),
                 false);
     }
 
@@ -82,27 +80,27 @@ public final class FastutilCompat {
             }
         };
         return StreamSupport.longStream(
-                Spliterators.spliterator(adapter, list.size(),
-                        Spliterator.ORDERED | Spliterator.SIZED | Spliterator.SUBSIZED
-                                | Spliterator.NONNULL),
+                Spliterators.spliterator(
+                        adapter,
+                        list.size(),
+                        Spliterator.ORDERED | Spliterator.SIZED | Spliterator.SUBSIZED | Spliterator.NONNULL),
                 false);
     }
 
     /**
-     * Mirrors fastutil 8's {@code computeIfAbsent(int, Int2ObjectFunction)}.
+     * Mirrors fastutil 8's {@code computeIfAbsent(int, Int2ObjectFunction)}: a
+     * present key (or a stored non-{@code defaultReturnValue} value) returns as
+     * is; a function that does not define the key yields the default uncalled;
+     * otherwise the computed value is stored, {@code null} included — unlike
+     * {@code Map.computeIfAbsent}. 7.1.0 names the function method
+     * {@code get}, not {@code apply}.
      *
-     * <p>A present key, or a stored value other than {@code defaultReturnValue},
-     * is returned as is. A function that does not define the key yields the
-     * default without being called. Otherwise the computed value is stored,
-     * even if {@code null} (unlike {@code Map.computeIfAbsent}). fastutil 7.1.0
-     * names the function method {@code get}, not {@code apply}.
-     *
-     * <p>No locking: as in fastutil, the atomicity of the get-compute-put comes
-     * from the map. Callers on {@code Int2ObjectMaps.synchronize} wrappers hold
-     * the wrapper's monitor (the transformer handlers do).
+     * <p>No locking, as in fastutil: atomicity comes from the map.
+     * {@code Int2ObjectMaps.synchronize} callers hold its monitor (the
+     * transformer handlers do).
      */
-    public static <V> V computeIfAbsent(Int2ObjectMap<V> map, int key,
-                                        Int2ObjectFunction<? extends V> mappingFunction) {
+    public static <V> V computeIfAbsent(
+            Int2ObjectMap<V> map, int key, Int2ObjectFunction<? extends V> mappingFunction) {
         Objects.requireNonNull(mappingFunction);
         V value = map.get(key);
         V defaultReturnValue = map.defaultReturnValue();
@@ -133,8 +131,8 @@ public final class FastutilCompat {
      * {@code long} counterpart of
      * {@link #computeIfAbsent(Int2ObjectMap, int, Int2ObjectFunction)}.
      */
-    public static <V> V computeIfAbsent(Long2ObjectMap<V> map, long key,
-                                        Long2ObjectFunction<? extends V> mappingFunction) {
+    public static <V> V computeIfAbsent(
+            Long2ObjectMap<V> map, long key, Long2ObjectFunction<? extends V> mappingFunction) {
         Objects.requireNonNull(mappingFunction);
         V value = map.get(key);
         V defaultReturnValue = map.defaultReturnValue();
@@ -163,16 +161,14 @@ public final class FastutilCompat {
      */
     public static <K> int getOrDefault(Object2IntMap<K> map, Object key, int defaultValue) {
         int v;
-        return (v = map.getInt(key)) != map.defaultReturnValue() || map.containsKey(key)
-                ? v : defaultValue;
+        return (v = map.getInt(key)) != map.defaultReturnValue() || map.containsKey(key) ? v : defaultValue;
     }
 
     /**
-     * Mirrors fastutil 8's {@code fastIterable}. When the entry set is a
-     * {@code FastEntrySet}, both {@code iterator()} and {@code forEach} use
-     * {@code fastIterator()}, which reuses one entry instance instead of
-     * allocating one per step. fastutil 7.1.0 has no {@code fastForEach}, so
-     * {@code forEach} loops over the fast iterator directly.
+     * Mirrors fastutil 8's {@code fastIterable}: on a {@code FastEntrySet} both
+     * {@code iterator()} and {@code forEach} run on {@code fastIterator()},
+     * which reuses one entry instance; 7.1.0 has no {@code fastForEach}, so
+     * {@code forEach} loops it manually.
      */
     public static <K, V> ObjectIterable<Object2ObjectMap.Entry<K, V>> fastIterable(Object2ObjectMap<K, V> map) {
         ObjectSet<Object2ObjectMap.Entry<K, V>> entries = map.object2ObjectEntrySet();
