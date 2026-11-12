@@ -1,5 +1,7 @@
-import dev.morphismx.retrodfu.task.*
-import org.gradle.api.attributes.Usage
+import dev.morphismx.retrodfu.task.CheckSignature
+import dev.morphismx.retrodfu.task.PatchFiles
+import dev.morphismx.retrodfu.task.PatchJar
+import dev.morphismx.retrodfu.task.ScanJar
 import org.gradle.api.tasks.testing.logging.TestLogEvent
 import xyz.wagyourtail.jvmdg.gradle.task.DowngradeJar
 import xyz.wagyourtail.jvmdg.gradle.task.ShadeJar
@@ -9,12 +11,13 @@ plugins {
     java
     `maven-publish`
     alias(libs.plugins.jvmdg)
+    alias(libs.plugins.spotless)
+    alias(libs.plugins.openjavaformat)
     id("retrodfu")
 }
 
 group = "dev.morphismx"
 version = "11.0.22"
-base.archivesName = "retrodfu"
 
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(25)
@@ -24,65 +27,59 @@ repositories {
     mavenCentral()
 }
 
-val patchTarget = configurations.create("patchTarget") {
-    isTransitive = false
-    isCanBeConsumed = false
-    attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named<Usage>(Usage.JAVA_RUNTIME))
-}
-
-// Resolvable view of the DFU runtime classpath: patchJar feeds it to
-// ClassTransform's frame computer, which must see the same dependencies the
-// classes it rewrites were compiled against.
-val patchClasspath = configurations.create("patchClasspath") {
-    isCanBeConsumed = false
-    attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named<Usage>(Usage.JAVA_RUNTIME))
-}
+// ── Source sets ─────────────────────────────────────────────────────────────
 
 // The transformer source set sits beside main/test: one flat package holds
-// the @CTransformer classes for the DFU jar and the downgraded test classes
-// plus the bytecode transformers they instantiate, and each patch task picks
-// its subset through the mixin-style JSON configs in
-// src/transformer/resources. It compiles against the same old-API baselines
-// as main, sees main's output for the GuavaCompat/FastutilCompat forwards,
-// and never depends on DFU itself — target class names travel as annotation
-// strings. Declared before `dependencies` so `transformerCompileOnly` exists
-// when the dependency block references it.
-sourceSets {
-    create("transformer") {
-        java.srcDir("src/transformer/java")
-        compileClasspath += sourceSets.main.get().output
-    }
-    // Upstream's own test tree lives apart from `test`: it is upstream code
-    // compiled against upstream's real dependencies, while `test`
-    // (src/test/java) sees only the same old-API baselines as main — so test
-    // code can only reference members that exist on every lane's deps.
-    create("upstreamTest") {
-        java.srcDir("upstream/src/test/java")
-    }
-}
-configurations.named("transformerCompileOnly") {
-    extendsFrom(configurations.compileOnly.get())
-}
-// testCompileOnly does not extend compileOnly by default; wire it so the
-// compat unit tests see the same old-API baseline as main. Only compile —
-// at runtime the lanes supply their own dependency sets.
-configurations.named("testCompileOnly") {
-    extendsFrom(configurations.compileOnly.get())
+// the @CTransformer classes for the DFU jar and the downgraded test classes;
+// each patch task picks its subset via the mixin-style JSON in
+// src/transformer/resources. Same old-API baselines as main, sees main's
+// output for the compat forwards, never depends on DFU — target names travel
+// as annotation strings.
+val transformer = sourceSets.create("transformer") {
+    java.srcDir("src/transformer/java")
+    compileClasspath += sourceSets.main.get().compileClasspath
+    compileClasspath += sourceSets.main.get().output
 }
 
-// A resolvable, non-transitive bucket.
-fun detached(name: String) = configurations.create(name) {
+// Upstream's own test tree, compiled against upstream's real dependencies —
+// unlike `test` (src/test/java), which sees only the old-API baselines of main
+// so its code resolves on every lane's deps.
+val upstreamTest = sourceSets.create("upstreamTest") {
+    java.srcDir("upstream/src/test/java")
+}
+
+// Both test trees take the same downgrade + patch path.
+val testTrees = listOf(sourceSets.test.get(), upstreamTest)
+
+// ── Configurations ──────────────────────────────────────────────────────────
+
+fun resolvableUsage(name: String, configure: Configuration.() -> Unit = {}) =
+    configurations.create(name) {
+        isCanBeConsumed = false
+        attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named<Usage>(Usage.JAVA_RUNTIME))
+        configure()
+    }
+
+// A resolvable, non-transitive dependency bucket.
+fun bucket(name: String) = configurations.create(name) {
     isCanBeConsumed = false
     isTransitive = false
 }
 
-val mc1122 = detached("mc1122")
-val mc1710 = detached("mc1710")
+// The upstream DFU jar alone: the input of patchJar.
+val patchTarget = resolvableUsage("patchTarget") { isTransitive = false }
+
+// DFU's runtime classpath — ClassTransform's frame computer must see the
+// dependencies the rewritten classes compiled against.
+val patchClasspath = resolvableUsage("patchClasspath")
+
+val mc1122 = bucket("mc1122")
+val mc1710 = bucket("mc1710")
 // junit and the JvmDG api jar for the downgraded test classpaths.
-val retroTestRuntime = detached("retroTestRuntime")
-// The java18 API signature for AnimalSniffer; the tool itself is a
+val retroTestRuntime = bucket("retroTestRuntime")
+// The java18 API signature for checkSignature; the tool itself is a
 // build-logic dependency.
-val javaSignature = detached("javaSignature")
+val javaSignature = bucket("javaSignature")
 
 // junit pulls in hamcrest-core 1.3, but hamcrest 3.0 already contains all of
 // its classes, so keep the redundant artifact off every classpath.
@@ -91,21 +88,20 @@ configurations.configureEach {
 }
 
 dependencies {
-    "patchTarget"("com.mojang:datafixerupper")
-    "patchClasspath"("com.mojang:datafixerupper")
+    patchTarget("com.mojang:datafixerupper")
+    patchClasspath("com.mojang:datafixerupper")
 
-    // The patch classes compile against the oldest supported game dependencies,
-    // so every member they use exists on all supported Minecraft versions.
-    // CompatScan re-checks this against the baselines.
-    compileOnly(libs.mc1710.gson)
-    compileOnly(libs.mc1710.guava)
-    compileOnly(libs.mc1710.log4j.api)
-    compileOnly(libs.mc1122.fastutil)
+    // Oldest supported game deps, so only members present on every supported
+    // version resolve; scanJar re-checks the baselines.
+    implementation(libs.mc1710.gson)
+    implementation(libs.mc1710.guava)
+    implementation(libs.mc1710.log4j.api)
+    implementation(libs.mc1122.fastutil)
 
     // ClassTransform annotations are compile-time only: the @CTransformer
-    // classes are consumed as bytecode, while the bytecode transformers are
-    // instantiated inside the patch tasks. None of it reaches the jar.
-    "transformerCompileOnly"(libs.classtransform.core)
+    // classes are consumed as bytecode, while the config's renames are applied
+    // inside the patch tasks. None of it reaches the jar.
+    add(transformer.compileOnlyConfigurationName, libs.classtransform.core)
 
     // The JDK 25 test lane runs the unmodified upstream build as the control.
     // The substituted project brings gson, guava, fastutil, jspecify and
@@ -118,139 +114,129 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.hamcrest)
 
-    "retroTestRuntime"(libs.junit)
-    "retroTestRuntime"(libs.hamcrest)
-    // Use prebuilt API JAR to speed up: the Java 8 lanes resolve JvmDG stubs
-    // from it at runtime instead of shading them into the test classes.
-    "retroTestRuntime"(variantOf(libs.jvmdg.java.api) { classifier("downgraded-8") })
+    retroTestRuntime(libs.junit)
+    retroTestRuntime(libs.hamcrest)
+    // Prebuilt API jar: the Java 8 lanes resolve JvmDG stubs from it at
+    // runtime instead of shading them into the test classes.
+    retroTestRuntime(variantOf(libs.jvmdg.java.api) { classifier("downgraded-8") })
 
-    "mc1122"(libs.mc1122.gson)
-    "mc1122"(libs.mc1122.guava)
-    "mc1122"(libs.mc1122.log4j.api)
-    "mc1122"(libs.mc1122.log4j.core)
-    "mc1122"(libs.mc1122.fastutil)
+    mc1122(libs.mc1122.gson)
+    mc1122(libs.mc1122.guava)
+    mc1122(libs.mc1122.log4j.api)
+    mc1122(libs.mc1122.log4j.core)
+    mc1122(libs.mc1122.fastutil)
 
-    "mc1710"(libs.mc1710.gson)
-    "mc1710"(libs.mc1710.guava)
-    "mc1710"(libs.mc1710.log4j.api)
-    "mc1710"(libs.mc1710.log4j.core)
+    mc1710(libs.mc1710.gson)
+    mc1710(libs.mc1710.guava)
+    mc1710(libs.mc1710.log4j.api)
+    mc1710(libs.mc1710.log4j.core)
     // 1.7.10 ships no fastutil, so this lane supplies the minimum version
     // itself, as a downstream would have to.
-    "mc1710"(libs.mc1122.fastutil)
+    mc1710(libs.mc1122.fastutil)
 
-    "javaSignature"(variantOf(libs.java18Signature) { artifactType("signature") })
+    javaSignature(variantOf(libs.java18Signature) { artifactType("signature") })
 }
 
-val retroGroup = "retrodfu"
+// ── Jar pipeline: patch -> downgrade -> shade ───────────────────────────────
 
-// The classes jar gets its own name: with the default empty classifier it
-// would share retrodfu-<version>.jar with the shaded artifact.
-val classesJar = tasks.named<Jar>("jar") {
-    archiveClassifier = "classes"
+val taskGroup = "retrodfu"
+
+// The only file of a single-artifact configuration, as a lazy provider.
+fun singleFile(config: Configuration) = config.elements.map { it.single().asFile }
+
+// Nothing consumes the plain classes jar: patchJar reads the main output
+// directly and the published artifact is the shaded jar.
+tasks.jar {
+    enabled = false
 }
 
 val patchJar = tasks.register<PatchJar>("patchJar") {
-    group = retroGroup
+    group = taskGroup
     description = "Patches the upstream jar with ClassTransform and merges in the compat classes"
-    inputFile.fileProvider(patchTarget.elements.map { it.single().asFile })
-    transformers.from(sourceSets["transformer"].output)
+    inputFile.fileProvider(singleFile(patchTarget))
+    transformers.from(transformer.output)
     transformerConfig = "dfu.transformers.json"
     classpath.from(patchClasspath, sourceSets.main.get().output)
     archiveClassifier = "patched"
     from(sourceSets.main.get().output)
 }
 
-val downgradeJar = tasks.named<DowngradeJar>("downgradeJar") {
-    group = retroGroup
-    description = "Downgrades the merged jar to Java 8 bytecode, rewriting newer JDK API calls to JvmDG stubs"
+tasks.named<DowngradeJar>("downgradeJar") {
+    group = taskGroup
+    description = "Downgrades the patched jar to Java 8 bytecode, rewriting newer JDK API calls to JvmDG stubs"
     inputFile = patchJar.flatMap { it.archiveFile }
     classpath = sourceSets.main.get().compileClasspath
     archiveClassifier = "downgraded"
 }
 
 val shadeDowngradedApi = tasks.named<ShadeJar>("shadeDowngradedApi") {
-    group = retroGroup
+    group = taskGroup
     description = "Shades the used JvmDG api stubs into the jar under dev/morphismx/retrodfu/shadow/jvmdg"
     shadePath = "dev/morphismx/retrodfu/shadow/jvmdg/"
     archiveClassifier = ""
 }
 
-tasks.named("assemble") { dependsOn(shadeDowngradedApi) }
+tasks.assemble { dependsOn(shadeDowngradedApi) }
 
-// The jars of one artifact in a game dependency set, selected by file name
-// prefix such as gson-, guava-, log4j-api- or fastutil-.
-fun named(config: Configuration, prefix: String) = config.elements.map { fs ->
-    fs.map { it.asFile }.filter { it.name.startsWith(prefix) }
+val sourcesJar = tasks.register<Jar>("sourcesJar") {
+    group = taskGroup
+    description = "Sources jar: upstream DFU sources plus our patch classes"
+    archiveClassifier = "sources"
+    from("upstream/src/main/java")
+    from(sourceSets.main.get().allSource)
 }
 
-val compatScan = tasks.register<CompatScan>("compatScan") {
-    group = retroGroup
-    description =
-        "Member-resolution gate: log4j/gson/guava/fastutil refs resolve on the MC baselines, self refs resolve, no stray types"
+// ── Gates ───────────────────────────────────────────────────────────────────
+
+// The jars of one artifact in a game dependency set, by file-name prefix.
+fun jarsNamed(config: Configuration, prefix: String) = config.elements.map { files ->
+    files.map { it.asFile }.filter { it.name.startsWith(prefix) }
+}
+
+val scanJar = tasks.register<ScanJar>("scanJar") {
+    group = taskGroup
+    description = "Jar gate: entry allowlist, bytecode major, forbidden references, member resolution on the MC baselines"
     inputJar = shadeDowngradedApi.flatMap { it.archiveFile }
     selfPrefixes = listOf("com/mojang/", "dev/morphismx/retrodfu/")
     fun baseline(prefix: String, vararg sources: Any) {
-        baselines.add(project.objects.newInstance(CompatScan.Baseline::class.java).apply {
+        baselines.add(project.objects.newInstance(ScanJar.Baseline::class.java).apply {
             this.prefix.set(prefix)
             jars.from(*sources)
         })
     }
-    baseline("com/google/gson", named(mc1710, "gson-"), named(mc1122, "gson-"))
-    baseline("com/google/common", named(mc1710, "guava-"), named(mc1122, "guava-"))
-    baseline("it/unimi/dsi/fastutil", named(mc1122, "fastutil-"))
-    baseline("org/apache/logging/log4j", named(mc1710, "log4j-api-"), named(mc1122, "log4j-api-"))
-    reportFile = layout.buildDirectory.file("reports/retro/compat-scan.txt")
+    baseline("com/google/gson", jarsNamed(mc1710, "gson-"), jarsNamed(mc1122, "gson-"))
+    baseline("com/google/common", jarsNamed(mc1710, "guava-"), jarsNamed(mc1122, "guava-"))
+    baseline("it/unimi/dsi/fastutil", jarsNamed(mc1122, "fastutil-"))
+    baseline("org/apache/logging/log4j", jarsNamed(mc1710, "log4j-api-"), jarsNamed(mc1122, "log4j-api-"))
+    reportFile = layout.buildDirectory.file("reports/retro/scan-jar.txt")
 }
 
-val verifyJar = tasks.register<AnimalSniffer>("verifyJar") {
-    group = retroGroup
+val checkSignature = tasks.register<CheckSignature>("checkSignature") {
+    group = taskGroup
     description = "animal-sniffer: java18 signature + both game dep sets on the classpath"
-    dependsOn(compatScan)
     inputJar = shadeDowngradedApi.flatMap { it.archiveFile }
-    signatureFile.fileProvider(javaSignature.elements.map { files -> files.single().asFile })
+    signatureFile.fileProvider(singleFile(javaSignature))
     apiJars.from(mc1710, mc1122)
     // MethodHandle.invokeExact is signature-polymorphic, which animal-sniffer
     // cannot model; the class exists since Java 7 anyway.
     ignores = setOf("sun.misc", "java.lang.invoke.MethodHandle")
-    reportFile = layout.buildDirectory.file("reports/retro/verify-stamp.txt")
+    reportFile = layout.buildDirectory.file("reports/retro/check-signature.txt")
 }
 
-tasks.named<Test>("test") {
-    // The control lane runs our compat tests (test source set, old-API
-    // compile baselines) and upstream's tree (upstreamTest) together on the
-    // modern upstream dependencies.
-    testClassesDirs = files(sourceSets.test.get().output, sourceSets["upstreamTest"].output)
-    classpath = files(sourceSets.test.get().runtimeClasspath,
-                      sourceSets["upstreamTest"].runtimeClasspath)
+// The target is explicit because the upstreamTest source set lives inside the
+// upstream/ submodule, which must never be reformatted.
+spotless {
+    java {
+        target("src/**/*.java")
+    }
 }
 
-val testDowngrade = tasks.register<DowngradeFiles>("testDowngrade") {
-    group = retroGroup
-    description = "Downgrades the test classes to Java 8 bytecode"
-    inputCollection = files(sourceSets.test.get().output, sourceSets["upstreamTest"].output)
-    classpath = files(sourceSets.test.get().compileClasspath,
-                      sourceSets["upstreamTest"].compileClasspath)
-    // Each input root lands at temporaryDir/<input-name>. DowngradeFiles
-    // registers no output for a root that doesn't exist at configuration
-    // time, so declare them here.
-    outputs.dir(temporaryDir.resolve("test"))
-    outputs.dir(temporaryDir.resolve("upstreamTest"))
-}
+// The root format tasks cover the included build too.
+val buildLogic = gradle.includedBuild("build-logic")
+tasks.spotlessCheck { dependsOn(buildLogic.task(":spotlessCheck")) }
+tasks.spotlessApply { dependsOn(buildLogic.task(":spotlessApply")) }
 
-val testPatch = tasks.register<PatchFiles>("testPatch") {
-    group = retroGroup
-    description = "Applies the same patch rules to the test classes"
-    inputDirs.from(testDowngrade)
-    outputDir = layout.buildDirectory.dir("retrotest")
-    transformers.from(sourceSets["transformer"].output)
-    transformerConfig = "test.transformers.json"
-    // The frame computer sees both test trees' compile classpaths — the
-    // upstream build's test dependencies plus our old-API baselines — and our
-    // compat classes, which the test transformers' handler bodies call into.
-    classpath.from(sourceSets.test.get().compileClasspath,
-                   sourceSets["upstreamTest"].compileClasspath,
-                   sourceSets.main.get().output)
-}
+// ── Test lanes ──────────────────────────────────────────────────────────────
 
 tasks.withType<Test>().configureEach {
     useJUnit()
@@ -260,56 +246,86 @@ tasks.withType<Test>().configureEach {
     }
 }
 
-// Registers one test-matrix lane and makes `check` depend on it.
-fun registerTestLane(
-    taskName: String, desc: String, javaVersion: Int, mcConfig: Configuration,
-    classes: TaskProvider<PatchFiles>, vararg extraClasspath: Any
-) {
-    val t = tasks.register<Test>(taskName) {
-        group = retroGroup
-        description = desc
-        javaLauncher = javaToolchains.launcherFor {
-            languageVersion = JavaLanguageVersion.of(javaVersion)
-        }
-        testClassesDirs = files(classes)
-        classpath = files(mcConfig, classes, *extraClasspath, retroTestRuntime)
+val testDowngrade = tasks.register<DowngradeFiles>("testDowngrade") {
+    group = taskGroup
+    description = "Downgrades the test classes to Java 8 bytecode"
+    inputCollection = files(testTrees.map { it.output })
+    classpath = files(testTrees.map { it.compileClasspath })
+    // Each input root lands at temporaryDir/<input-name>. DowngradeFiles
+    // registers no output for a root that doesn't exist at configuration
+    // time, so declare them here.
+    testTrees.forEach { outputs.dir(temporaryDir.resolve(it.name)) }
+}
+
+val testPatch = tasks.register<PatchFiles>("testPatch") {
+    group = taskGroup
+    description = "Applies the same patch rules to the test classes"
+    inputDirs.from(testDowngrade)
+    outputDir = layout.buildDirectory.dir("retrotest")
+    transformers.from(transformer.output)
+    transformerConfig = "test.transformers.json"
+    // The frame computer sees both test trees' compile classpaths — the
+    // upstream build's test dependencies plus our old-API baselines — and our
+    // compat classes, which the test transformers' handler bodies call into.
+    classpath.from(testTrees.map { it.compileClasspath }, sourceSets.main.get().output)
+}
+
+// The JDK 25 control: upstream's own tests against the unmodified upstream
+// build. A failure on a retro lane that also fails here is upstream's, not the
+// downgrade's. It stays apart from `test` because upstream's guava would
+// clash with the old-API baselines that `test` runs on.
+val testUpstream = tasks.register<Test>("testUpstream") {
+    group = taskGroup
+    description = "Runs upstream's CodecTests and RoundtripTest on JDK 25 against the unmodified upstream jar"
+    testClassesDirs = upstreamTest.output.classesDirs
+    classpath = upstreamTest.runtimeClasspath
+    shouldRunAfter("test")
+}
+
+// The retro lanes: the final jar's downgraded suite on Java 8, one lane per
+// game's dependency set.
+val java8Launcher = javaToolchains.launcherFor {
+    languageVersion = JavaLanguageVersion.of(8)
+}
+val retroLanes = mapOf("testMc1122" to mc1122, "testMc1710" to mc1710).map { (laneName, gameDeps) ->
+    tasks.register<Test>(laneName) {
+        group = taskGroup
+        description = "Runs the downgraded suite on Java 8 with ${gameDeps.name} dependencies"
+        javaLauncher = java8Launcher
+        testClassesDirs = files(testPatch)
+        classpath = files(gameDeps, testPatch, shadeDowngradedApi, retroTestRuntime)
         shouldRunAfter("test")
     }
-    tasks.named("check") { dependsOn(t) }
 }
 
-registerTestLane(
-    "testMc1122",
-    "Runs the downgraded suite on Java 8 with mc1122 dependencies", 8, mc1122,
-    testPatch, shadeDowngradedApi
-)
-registerTestLane(
-    "testMc1710",
-    "Runs the downgraded suite on Java 8 with mc1710 dependencies", 8, mc1710,
-    testPatch, shadeDowngradedApi
-)
-
-tasks.named("check") {
-    dependsOn(
-        verifyJar,
-        gradle.includedBuild("build-logic").task(":test")
-    )
+tasks.check {
+    dependsOn(scanJar, checkSignature, buildLogic.task(":test"), testUpstream, retroLanes)
 }
 
-val sourcesJar = tasks.register<Jar>("sourcesJar") {
-    group = retroGroup
-    description = "Sources jar: upstream DFU sources plus our patch classes"
-    archiveClassifier = "sources"
-    from("upstream/src/main/java")
-    from(sourceSets.main.get().allSource)
-}
+// ── Publishing ──────────────────────────────────────────────────────────────
 
 publishing {
     publications {
-        create<MavenPublication>("retro") {
-            artifactId = "retrodfu"
+        create<MavenPublication>("mavenJava") {
             artifact(shadeDowngradedApi)
             artifact(sourcesJar)
+
+            pom {
+                name = "RetroDFU"
+                description = "Mojang's DataFixerUpper repackaged for Java 8 and Minecraft 1.7.10 / 1.12.2"
+                url = "https://github.com/morphismx/RetroDFU"
+                licenses {
+                    license {
+                        name = "MIT License"
+                        url = "https://opensource.org/licenses/MIT"
+                    }
+                }
+                scm {
+                    url = "https://github.com/morphismx/RetroDFU"
+                    connection = "scm:git:https://github.com/morphismx/RetroDFU.git"
+                    developerConnection = "scm:git:ssh://git@github.com/morphismx/RetroDFU.git"
+                }
+            }
         }
     }
 }

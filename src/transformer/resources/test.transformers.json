@@ -1,9 +1,10 @@
 {
-    "package": "dev.morphismx.retrodfu.transformer",
-    "bytecodeTransformers": [
-        "TypeRenameTransformer"
-    ],
-    "transformers": [
-        "CodecTestsTransformer"
-    ]
+  "package": "dev.morphismx.retrodfu",
+  "renames": {
+    "org.slf4j.Logger": "dev.morphismx.retrodfu.slf4j.Logger",
+    "org.slf4j.LoggerFactory": "dev.morphismx.retrodfu.slf4j.LoggerFactory"
+  },
+  "transformers": [
+    "CodecTestsTransformer"
+  ]
 }

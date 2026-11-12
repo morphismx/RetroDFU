@@ -1,4 +1,4 @@
-package dev.morphismx.retrodfu.transformer;
+package dev.morphismx.retrodfu;
 
 import dev.morphismx.retrodfu.fastutil.FastutilCompat;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
@@ -8,14 +8,18 @@ import net.lenni0451.classtransform.annotations.injection.CRedirect;
 
 /**
  * Redirects {@code Schema}'s {@code Object2IntMap.getOrDefault} calls onto the
- * compat implementation. The handler is an instance method because the
- * targeted methods are.
+ * compat implementation — an instance method because the targeted methods
+ * are.
  */
 @CTransformer(name = "com.mojang.datafixers.schemas.Schema")
 abstract class SchemaTransformer {
 
-    @CRedirect(method = {"buildTypes", "id"}, target = @CTarget(value = "INVOKE",
-            target = "Lit/unimi/dsi/fastutil/objects/Object2IntMap;getOrDefault(Ljava/lang/Object;I)I"))
+    @CRedirect(
+            method = {"buildTypes", "id"},
+            target =
+                    @CTarget(
+                            value = "INVOKE",
+                            target = "Lit/unimi/dsi/fastutil/objects/Object2IntMap;getOrDefault(Ljava/lang/Object;I)I"))
     int getOrDefault(Object2IntMap<Object> map, Object key, int defaultValue) {
         return FastutilCompat.getOrDefault(map, key, defaultValue);
     }

@@ -1,9 +1,16 @@
 package dev.morphismx.retrodfu.fastutil;
 
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+
 import it.unimi.dsi.fastutil.ints.AbstractInt2ObjectFunction;
-import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.longs.AbstractLong2ObjectFunction;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
@@ -16,40 +23,37 @@ import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectIterable;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
-import org.junit.Test;
-
+import java.util.ArrayList;
+import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.LongStream;
-
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
+import org.junit.Test;
 
 public class FastutilCompatTest {
 
     @Test
     public void toListIntCollectsInOrder() {
-        assertEquals(new IntArrayList(new int[]{1, 2, 3}),
-                FastutilCompat.toList(IntStream.of(1, 2, 3)));
+        assertEquals(new IntArrayList(new int[] {1, 2, 3}), FastutilCompat.toList(IntStream.of(1, 2, 3)));
     }
 
     @Test
     public void toListLongCollectsInOrder() {
-        assertEquals(new LongArrayList(new long[]{1, 2, 3}),
-                FastutilCompat.toList(LongStream.of(1, 2, 3)));
+        assertEquals(new LongArrayList(new long[] {1, 2, 3}), FastutilCompat.toList(LongStream.of(1, 2, 3)));
     }
 
     @Test
     public void intStreamPreservesOrder() {
-        assertArrayEquals(new int[]{4, 2, 7},
-                FastutilCompat.intStream(new IntArrayList(new int[]{4, 2, 7})).toArray());
+        assertArrayEquals(
+                new int[] {4, 2, 7},
+                FastutilCompat.intStream(new IntArrayList(new int[] {4, 2, 7})).toArray());
     }
 
     @Test
     public void longStreamPreservesOrder() {
-        assertArrayEquals(new long[]{4, 2, 7},
-                FastutilCompat.longStream(new LongArrayList(new long[]{4, 2, 7})).toArray());
+        assertArrayEquals(
+                new long[] {4, 2, 7},
+                FastutilCompat.longStream(new LongArrayList(new long[] {4, 2, 7}))
+                        .toArray());
     }
 
     @Test
@@ -97,11 +101,53 @@ public class FastutilCompatTest {
     }
 
     @Test
+    public void computeIfAbsentStoresANullResult() {
+        // Unlike Map.computeIfAbsent, a null result is stored as the value.
+        Int2ObjectMap<String> map = new Int2ObjectOpenHashMap<>();
+        assertNull(FastutilCompat.computeIfAbsent(map, 5, new NullReturning()));
+        assertTrue(map.containsKey(5));
+        assertNull(map.get(5));
+    }
+
+    @Test
     public void computeIfAbsentLongStoresComputedValue() {
         Long2ObjectMap<String> map = new Long2ObjectOpenHashMap<>();
         String value = FastutilCompat.computeIfAbsent(map, 2L, new DefiningLong());
         assertEquals("v2", value);
         assertEquals("v2", map.get(2L));
+    }
+
+    @Test
+    public void computeIfAbsentLongReturnsPresentWithoutCalling() {
+        Long2ObjectMap<String> map = new Long2ObjectOpenHashMap<>();
+        map.put(2L, "present");
+        DefiningLong function = new DefiningLong();
+        assertEquals("present", FastutilCompat.computeIfAbsent(map, 2L, function));
+        assertEquals(0, function.calls);
+    }
+
+    @Test
+    public void computeIfAbsentLongSkipsKeysTheFunctionDoesNotDefine() {
+        Long2ObjectMap<String> map = new Long2ObjectOpenHashMap<>();
+        map.defaultReturnValue("d");
+        assertEquals("d", FastutilCompat.computeIfAbsent(map, 7L, new NotDefiningLong()));
+        assertFalse(map.containsKey(7L));
+    }
+
+    @Test
+    public void streamsOverListsAreSized() {
+        // The adapter reports the list size up front, as fastutil 8's own
+        // spliterator does.
+        assertEquals(
+                3L,
+                FastutilCompat.intStream(new IntArrayList(new int[] {1, 2, 3}))
+                        .spliterator()
+                        .getExactSizeIfKnown());
+        assertEquals(
+                3L,
+                FastutilCompat.longStream(new LongArrayList(new long[] {1, 2, 3}))
+                        .spliterator()
+                        .getExactSizeIfKnown());
     }
 
     @Test
@@ -127,11 +173,9 @@ public class FastutilCompatTest {
         Object2ObjectMap<String, Integer> map = new Object2ObjectOpenHashMap<>();
         map.put("a", 1);
         map.put("b", 2);
-        ObjectIterable<Object2ObjectMap.Entry<String, Integer>> iterable =
-                FastutilCompat.fastIterable(map);
+        ObjectIterable<Object2ObjectMap.Entry<String, Integer>> iterable = FastutilCompat.fastIterable(map);
         int sum = 0;
-        for (ObjectIterator<Object2ObjectMap.Entry<String, Integer>> it = iterable.iterator();
-             it.hasNext(); ) {
+        for (ObjectIterator<Object2ObjectMap.Entry<String, Integer>> it = iterable.iterator(); it.hasNext(); ) {
             sum += it.next().getValue();
         }
         assertEquals(3, sum);
@@ -141,20 +185,30 @@ public class FastutilCompatTest {
     }
 
     @Test
+    public void fastIterableReusesOneEntryInstance() {
+        // The point of fastIterable is the allocation-free fastIterator, so
+        // every element is the same mutable entry object.
+        Object2ObjectMap<String, Integer> map = new Object2ObjectOpenHashMap<>();
+        map.put("a", 1);
+        map.put("b", 2);
+        List<Object2ObjectMap.Entry<String, Integer>> seen = new ArrayList<>();
+        FastutilCompat.fastIterable(map).iterator().forEachRemaining(seen::add);
+        assertEquals(2, seen.size());
+        assertSame(seen.get(0), seen.get(1));
+    }
+
+    @Test
     public void fastIterableFallsBackToTheEntrySet() {
-        Object2ObjectMap<String, Integer> wrapped =
-                Object2ObjectMaps.unmodifiable(new Object2ObjectOpenHashMap<>());
+        Object2ObjectMap<String, Integer> wrapped = Object2ObjectMaps.unmodifiable(new Object2ObjectOpenHashMap<>());
         // The unmodifiable wrapper's entry set is no FastEntrySet, so the
         // entry set itself is the iterable.
-        ObjectSet<Object2ObjectMap.Entry<String, Integer>> entries =
-                wrapped.object2ObjectEntrySet();
+        ObjectSet<Object2ObjectMap.Entry<String, Integer>> entries = wrapped.object2ObjectEntrySet();
         assertSame(entries, FastutilCompat.fastIterable(wrapped));
     }
 
-    // The function impls are class-based, not lambdas: Int2ObjectFunction has
-    // several abstract methods on fastutil 7.1.0, so it is no functional
-    // interface on the compile baseline. Non-synthetic classes also exercise
-    // the containsKey branch a lambda's synthetic class would skip.
+    // Class-based impls, not lambdas: on 7.1.0 Int2ObjectFunction is no
+    // functional interface, and non-synthetic classes exercise the
+    // containsKey branch a lambda would skip.
     private static final class NotDefining extends AbstractInt2ObjectFunction<String> {
         int calls;
 
@@ -197,15 +251,52 @@ public class FastutilCompatTest {
         }
     }
 
+    private static final class NullReturning extends AbstractInt2ObjectFunction<String> {
+        @Override
+        public String get(int key) {
+            return null;
+        }
+
+        @Override
+        public boolean containsKey(int key) {
+            return true;
+        }
+
+        @Override
+        public int size() {
+            return 0;
+        }
+    }
+
     private static final class DefiningLong extends AbstractLong2ObjectFunction<String> {
+        int calls;
+
         @Override
         public String get(long key) {
+            calls++;
             return "v" + key;
         }
 
         @Override
         public boolean containsKey(long key) {
             return true;
+        }
+
+        @Override
+        public int size() {
+            return 0;
+        }
+    }
+
+    private static final class NotDefiningLong extends AbstractLong2ObjectFunction<String> {
+        @Override
+        public String get(long key) {
+            return "x";
+        }
+
+        @Override
+        public boolean containsKey(long key) {
+            return false;
         }
 
         @Override

@@ -1,75 +1,79 @@
 package dev.morphismx.retrodfu;
 
-import org.objectweb.asm.*;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Member;
+import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.objectweb.asm.*;
 
 /**
- * Verification gate for the retro jar. {@link #scan} returns a list of
- * problems; an empty list means the jar passed all of these checks:
+ * Verification gate for a jar. {@link #scan} returns a list of problems; an
+ * empty list means the jar passed all of these checks, parameterized by
+ * {@link Rules}:
  *
  * <ol>
- *   <li>Entries live under {@code com/mojang/datafixers/},
- *       {@code com/mojang/serialization/}, {@code dev/morphismx/retrodfu/} or
- *       {@code META-INF/}.</li>
- *   <li>Every class has major version 52 or lower, and neither
- *       {@code module-info} nor {@code META-INF/versions} is present.</li>
- *   <li>Forbidden reference strings ({@code org/slf4j}, unrelocated JvmDG
- *       and ClassTransform classes, {@code java/lang/Record},
- *       {@code StringConcatFactory}) occur only inside the JvmDG stub and
- *       relocated shadow trees.</li>
+ *   <li>Entries live under the rules' entry prefixes and none under the
+ *       forbidden entry prefixes.</li>
+ *   <li>Every class has major version no higher than the rules' maximum.</li>
+ *   <li>No forbidden needle occurs outside the exempt entry prefixes and
+ *       contexts, subject to its qualifiers.</li>
  *   <li>Each member reference whose owner starts with an API prefix resolves
- *       in every baseline jar given for that prefix, such as gson 2.2.4 and
- *       2.8.0.</li>
- *   <li>Each member reference into a self package resolves inside the jar,
- *       which catches ClassPatcher pointing at members that do not exist.</li>
+ *       in every baseline jar given for that prefix.</li>
+ *   <li>Each member reference into a self package resolves inside the jar.</li>
  *   <li>Every other referenced type resolves in the jar, the JDK or a
- *       baseline jar, which catches typos such as {@code om/mojang/...} from
- *       a broken rewrite rule.</li>
+ *       baseline jar.</li>
  * </ol>
  *
  * <p>Member resolution walks the class hierarchy by name and descriptor, as
  * the JVM does at link time.
  */
-public final class CompatScan {
-    static final String SHADOW_PREFIX = "dev/morphismx/retrodfu/shadow/";
-    static final String STUB_PREFIX = SHADOW_PREFIX + "jvmdg/";
-
-    static final String[] ALLOWED_ENTRY_PREFIXES = {
-            "com/mojang/datafixers/", "com/mojang/serialization/",
-            "dev/morphismx/retrodfu/", "META-INF/",
-    };
-
-    static final String[] FORBIDDEN = {
-            "org/slf4j", "org.slf4j",
-            "xyz/wagyourtail", "xyz.wagyourtail",
-            "net/lenni0451", "net.lenni0451",
-            "java/lang/Record", "java/lang/runtime/", "StringConcatFactory",
-    };
-
+public final class ClassScanner {
     private static final Pattern REF_TOKEN = Pattern.compile("([A-Za-z0-9_/$.\\-]+)");
 
-    private CompatScan() {
+    private ClassScanner() {}
+
+    /**
+     * The policy {@link #scan} enforces: allowed and forbidden entry prefixes,
+     * the maximum class-file major version, entry prefixes exempt from the
+     * byte scan, context prefixes that exempt a needle match, and the
+     * forbidden needles.
+     */
+    public record Rules(
+            List<String> entryPrefixes,
+            List<String> forbiddenEntryPrefixes,
+            int maxMajor,
+            List<String> scanExemptPrefixes,
+            List<String> exemptContexts,
+            List<Needle> forbidden) {}
+
+    /**
+     * A forbidden byte string. Non-empty {@code qualifiers} means a match only
+     * counts when the token starting at it contains one of them.
+     */
+    public record Needle(String text, List<String> qualifiers) {
+        public Needle(String text) {
+            this(text, List.of());
+        }
     }
 
     /**
      * Scans {@code jar}.
      *
+     * @param rules        the checks to enforce
      * @param selfPrefixes in-jar namespaces whose member refs must resolve
      *                     inside the jar
      * @param apiJars      owner prefix to the baseline jars that every matching
      *                     member ref must resolve against
      */
-    public static Result scan(File jar, List<String> selfPrefixes,
-                              Map<String, List<File>> apiJars) throws IOException {
+    public static Result scan(File jar, Rules rules, List<String> selfPrefixes, Map<String, List<File>> apiJars)
+            throws IOException {
         List<String> problems = new ArrayList<>();
         Set<Ref> refs = new TreeSet<>();
         Map<String, ClassInfo> index = new HashMap<>();
@@ -79,13 +83,13 @@ public final class CompatScan {
             while (e.hasMoreElements()) {
                 JarEntry je = e.nextElement();
                 String name = je.getName();
-                if (!entryAllowed(name)) {
+                if (!entryAllowed(name, rules)) {
                     problems.add("forbidden entry: " + name);
                     continue;
                 }
                 // module-info.class needs no explicit check: it already fails
                 // the entry whitelist above.
-                if (name.startsWith("META-INF/versions/")) {
+                if (startsWithAny(name, rules.forbiddenEntryPrefixes())) {
                     problems.add("forbidden entry: " + name);
                     continue;
                 }
@@ -95,8 +99,8 @@ public final class CompatScan {
                     b = in.readAllBytes();
                 }
                 int major = ((b[6] & 0xFF) << 8) | (b[7] & 0xFF);
-                if (major > 52) problems.add(name + " major version " + major);
-                checkForbidden(name, b, problems);
+                if (major > rules.maxMajor()) problems.add(name + " major version " + major);
+                checkForbidden(name, b, rules, problems);
                 new ClassReader(b).accept(new ScanCV(refs, index), ClassReader.SKIP_FRAMES);
             }
         }
@@ -128,8 +132,10 @@ public final class CompatScan {
                 JarEntry je = e.nextElement();
                 if (!je.getName().endsWith(".class")) continue;
                 try (InputStream in = jf.getInputStream(je)) {
-                    new ClassReader(in).accept(new ScanCV(null, index),
-                            ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+                    new ClassReader(in)
+                            .accept(
+                                    new ScanCV(null, index),
+                                    ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
                 }
             }
         }
@@ -139,25 +145,33 @@ public final class CompatScan {
     /**
      * Resolves one collected reference and adds any failure to {@code problems}.
      */
-    static void checkRef(Ref r, Map<String, ClassInfo> index,
-                         List<String> selfPrefixes, Map<String, List<File>> apiJars,
-                         Map<File, Map<String, ClassInfo>> baselineIndexes, List<String> problems) {
+    static void checkRef(
+            Ref r,
+            Map<String, ClassInfo> index,
+            List<String> selfPrefixes,
+            Map<String, List<File>> apiJars,
+            Map<File, Map<String, ClassInfo>> baselineIndexes,
+            List<String> problems) {
         if (r.owner().startsWith("[")) {
             // Array receiver: the element type must resolve, and the only
             // members are Object's (including clone()) plus the length field.
             Type t = Type.getObjectType(r.owner());
             while (t.getSort() == Type.ARRAY) t = t.getElementType();
             if (t.getSort() == Type.OBJECT) {
-                checkRef(new Ref(Kind.TYPE, t.getInternalName(), "", ""),
-                        index, selfPrefixes, apiJars, baselineIndexes, problems);
+                checkRef(
+                        new Ref(Kind.TYPE, t.getInternalName(), "", ""),
+                        index,
+                        selfPrefixes,
+                        apiJars,
+                        baselineIndexes,
+                        problems);
             }
             if (!arrayMemberOk(r)) problems.add("unresolved array member: " + r);
             return;
         }
         if (r.name().equals("<clinit>")) {
             // Not invocable; only the class must exist.
-            checkRef(new Ref(Kind.TYPE, r.owner(), "", ""), index, selfPrefixes,
-                    apiJars, baselineIndexes, problems);
+            checkRef(new Ref(Kind.TYPE, r.owner(), "", ""), index, selfPrefixes, apiJars, baselineIndexes, problems);
             return;
         }
         if (startsWithAny(r.owner(), selfPrefixes)) {
@@ -194,8 +208,8 @@ public final class CompatScan {
      * Whether an entry lives under an allowed prefix. Parent directories of an
      * allowed prefix are allowed too.
      */
-    static boolean entryAllowed(String name) {
-        for (String p : ALLOWED_ENTRY_PREFIXES) {
+    static boolean entryAllowed(String name, Rules rules) {
+        for (String p : rules.entryPrefixes()) {
             if (name.startsWith(p)) return true;
             if (name.endsWith("/") && p.startsWith(name)) return true;
         }
@@ -203,8 +217,11 @@ public final class CompatScan {
     }
 
     static boolean startsWithAny(String s, List<String> prefixes) {
-        for (String p : prefixes) if (s.startsWith(p)) return true;
-        return false;
+        return prefixes.stream().anyMatch(s::startsWith);
+    }
+
+    static boolean endsWithAny(String s, List<String> suffixes) {
+        return suffixes.stream().anyMatch(s::endsWith);
     }
 
     static boolean resolveSelf(Map<String, ClassInfo> index, Ref r) {
@@ -264,26 +281,56 @@ public final class CompatScan {
     }
 
     /**
-     * Resolves a member on a JDK class; {@code null} if the class cannot be
-     * loaded. Classes are loaded through the platform class loader, which sees
-     * only the JDK and not build-logic's own classpath (ASM, animal-sniffer,
-     * Gradle API).
+     * Resolves a member on a JDK class ({@code null} if unloadable) through
+     * the platform class loader, which sees the JDK only — not build-logic's
+     * own classpath (ASM, animal-sniffer, Gradle API).
      */
     static Boolean jdkMember(String owner, Ref r) {
         Class<?> c = loadJdkClass(owner);
         return c == null ? null : findMemberJdk(c, r) != null;
     }
 
+    /**
+     * Finds a member on a JDK class or its ancestors, public or protected: a
+     * subclass may legitimately reach an inherited protected member, e.g.
+     * {@code super.clone()}.
+     */
     static Object findMemberJdk(Class<?> c, Ref r) {
         try {
-            if (r.kind() == Kind.FIELD) return c.getField(r.name());
+            ClassLoader loader = c.getClassLoader();
+            if (r.kind() == Kind.FIELD) return findDeclared(c, k -> k.getDeclaredField(r.name()));
             if (r.name().equals("<init>")) {
-                return c.getDeclaredConstructor(paramTypes(r.desc(), c.getClassLoader()));
+                return c.getDeclaredConstructor(paramTypes(r.desc(), loader));
             }
-            return c.getMethod(r.name(), paramTypes(r.desc(), c.getClassLoader()));
+            Class<?>[] params = paramTypes(r.desc(), loader);
+            return findDeclared(c, k -> k.getDeclaredMethod(r.name(), params));
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    /**
+     * Looks up a non-private member along the superclass chain and the
+     * superinterfaces of every class on it.
+     */
+    private static Member findDeclared(Class<?> c, ReflectiveLookup lookup) {
+        for (Class<?> k = c; k != null; k = k.getSuperclass()) {
+            try {
+                Member m = lookup.find(k);
+                if (!Modifier.isPrivate(m.getModifiers())) return m;
+            } catch (ReflectiveOperationException ignored) {
+            }
+            for (Class<?> ifc : k.getInterfaces()) {
+                Member found = findDeclared(ifc, lookup);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    @FunctionalInterface
+    private interface ReflectiveLookup {
+        Member find(Class<?> c) throws ReflectiveOperationException;
     }
 
     static boolean jdkClassExists(String internal) {
@@ -292,8 +339,7 @@ public final class CompatScan {
 
     private static Class<?> loadJdkClass(String internal) {
         try {
-            return Class.forName(internal.replace('/', '.'), false,
-                    ClassLoader.getPlatformClassLoader());
+            return Class.forName(internal.replace('/', '.'), false, ClassLoader.getPlatformClassLoader());
         } catch (ClassNotFoundException | LinkageError e) {
             return null;
         }
@@ -323,57 +369,58 @@ public final class CompatScan {
     }
 
     /**
-     * Reports {@code entry} if its bytes contain a forbidden string outside the
-     * JvmDG stub tree.
+     * Reports {@code entry} if its bytes contain a forbidden needle outside
+     * the exempt prefixes and contexts of {@code rules}.
      */
-    static void checkForbidden(String entry, byte[] b, List<String> problems) {
-        // Our own classes legitimately carry the needles (the JvmDG stubs
-        // mention their unrelocated names, the transformer-facing docs name
-        // slf4j). Real references to them are still caught by member
-        // resolution, which runs on every class.
-        if (entry.startsWith("dev/morphismx/retrodfu/")) return;
+    static void checkForbidden(String entry, byte[] b, Rules rules, List<String> problems) {
+        for (String p : rules.scanExemptPrefixes()) {
+            if (entry.startsWith(p)) return;
+        }
         String s = new String(b, StandardCharsets.ISO_8859_1);
-        for (String needle : FORBIDDEN) {
-            int idx = s.indexOf(needle);
+        for (Needle needle : rules.forbidden()) {
+            int idx = s.indexOf(needle.text());
             while (idx >= 0) {
-                // A needle that is itself the tail of a relocated shadow path
-                // (shadow/jvmdg/java/lang/Record) is the payload, not a leak.
-                if (s.substring(Math.max(0, idx - 64), idx).endsWith(STUB_PREFIX)) {
-                    idx = s.indexOf(needle, idx + 1);
+                // A needle that is the tail of an exempt context is payload,
+                // not a leak.
+                if (endsWithAny(s.substring(Math.max(0, idx - 64), idx), rules.exemptContexts())) {
+                    idx = s.indexOf(needle.text(), idx + 1);
                     continue;
                 }
-                // Only xyz refs naming the stub/exc trees count as unrelocated
-                // JvmDG leaks; other mentions are incidental strings.
-                if (needle.startsWith("xyz")) {
+                if (!needle.qualifiers().isEmpty()) {
                     String rest = s.substring(idx, Math.min(idx + 96, s.length()));
                     Matcher m = REF_TOKEN.matcher(rest);
                     String ref = m.find() ? m.group(1) : "";
-                    if (!ref.contains("/stub/") && !ref.contains("/exc/") && !ref.contains(".stub.") && !ref.contains(".exc.")) {
-                        idx = s.indexOf(needle, idx + 1);
+                    boolean qualified = false;
+                    for (String q : needle.qualifiers()) qualified |= ref.contains(q);
+                    if (!qualified) {
+                        idx = s.indexOf(needle.text(), idx + 1);
                         continue;
                     }
                 }
-                problems.add(entry + " references " + needle);
+                problems.add(entry + " references " + needle.text());
                 break;
             }
         }
     }
 
-    enum Kind {TYPE, FIELD, METHOD}
+    enum Kind {
+        TYPE,
+        FIELD,
+        METHOD
+    }
 
     /**
      * One collected reference; the record itself is the dedup key.
      */
     record Ref(Kind kind, String owner, String name, String desc) implements Comparable<Ref> {
+        private static final Comparator<Ref> ORDER = Comparator.comparing(Ref::kind)
+                .thenComparing(Ref::owner)
+                .thenComparing(Ref::name)
+                .thenComparing(Ref::desc);
+
         @Override
         public int compareTo(Ref o) {
-            int c = kind.compareTo(o.kind);
-            if (c != 0) return c;
-            c = owner.compareTo(o.owner);
-            if (c != 0) return c;
-            c = name.compareTo(o.name);
-            if (c != 0) return c;
-            return desc.compareTo(o.desc);
+            return ORDER.compare(this, o);
         }
 
         @Override
@@ -395,8 +442,7 @@ public final class CompatScan {
     /**
      * The scan outcome: the problems found and the number of references checked.
      */
-    public record Result(List<String> problems, int refCount) {
-    }
+    public record Result(List<String> problems, int refCount) {}
 
     /**
      * Collects the references a class makes and indexes its own members.
@@ -489,6 +535,10 @@ public final class CompatScan {
 
                 @Override
                 public void visitInvokeDynamicInsn(String n, String d, Handle b, Object... args) {
+                    // The call-site descriptor links its own parameter and return types.
+                    Type site = Type.getMethodType(d);
+                    for (Type t : site.getArgumentTypes()) descTypes(t);
+                    descTypes(site.getReturnType());
                     handle(b);
                     for (Object x : args) {
                         if (x instanceof Handle) handle((Handle) x);
@@ -501,6 +551,12 @@ public final class CompatScan {
                     typeRef(h.getOwner());
                     // Handle tags 1-4 are field refs, 5-9 method refs.
                     memberRef(h.getOwner(), h.getName(), h.getDesc(), h.getTag() <= 4 ? Kind.FIELD : Kind.METHOD);
+                }
+
+                @Override
+                public void visitTryCatchBlock(Label start, Label end, Label handler, String type) {
+                    // A null type is a finally block.
+                    typeRef(type);
                 }
 
                 @Override

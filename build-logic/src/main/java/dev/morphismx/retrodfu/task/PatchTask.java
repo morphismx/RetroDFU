@@ -10,10 +10,9 @@ import org.gradle.api.tasks.*;
 interface PatchTask {
 
     /**
-     * The class trees holding the {@code @CTransformer} classes.
-     * {@code @Classpath} would miss rules-only edits: ClassTransform keeps its
-     * rules in runtime-invisible annotations, which classpath normalization
-     * ignores.
+     * The class trees holding the {@code @CTransformer} classes — not
+     * {@code @Classpath}: the rules live in runtime-invisible annotations,
+     * which classpath normalization ignores.
      */
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)

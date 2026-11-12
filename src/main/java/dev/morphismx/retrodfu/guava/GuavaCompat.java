@@ -4,7 +4,6 @@ import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.reflect.TypeToken;
-
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -16,16 +15,14 @@ import java.util.function.Function;
 import java.util.stream.Collector;
 
 /**
- * Compatibility implementations for guava calls that postdate the game's
- * guava 17 baseline. The ClassTransform transformers forward the redirected
- * call sites here.
+ * Compatibility implementations for guava members newer than the game's
+ * guava 17 baseline; the transformers redirect the matching call sites here.
  */
 public final class GuavaCompat {
 
     private static final MethodHandle IS_SUPERTYPE_OF = findIsSupertypeOf();
 
-    private GuavaCompat() {
-    }
+    private GuavaCompat() {}
 
     /**
      * Mirrors guava's {@code ImmutableList.builderWithExpectedSize}. The size
@@ -34,8 +31,7 @@ public final class GuavaCompat {
      */
     public static <E> ImmutableList.Builder<E> listBuilderWithExpectedSize(int expectedSize) {
         if (expectedSize < 0) {
-            throw new IllegalArgumentException(
-                    "expectedSize cannot be negative but was: " + expectedSize);
+            throw new IllegalArgumentException("expectedSize cannot be negative but was: " + expectedSize);
         }
         return ImmutableList.builder();
     }
@@ -46,8 +42,7 @@ public final class GuavaCompat {
      */
     public static <K, V> ImmutableMap.Builder<K, V> mapBuilderWithExpectedSize(int expectedSize) {
         if (expectedSize < 0) {
-            throw new IllegalArgumentException(
-                    "expectedSize cannot be negative but was: " + expectedSize);
+            throw new IllegalArgumentException("expectedSize cannot be negative but was: " + expectedSize);
         }
         return ImmutableMap.builder();
     }
@@ -103,8 +98,7 @@ public final class GuavaCompat {
      * duplicate, then copied.
      */
     public static <T, K, V> Collector<T, ?, ImmutableMap<K, V>> toImmutableMap(
-            Function<? super T, ? extends K> keyFunction,
-            Function<? super T, ? extends V> valueFunction) {
+            Function<? super T, ? extends K> keyFunction, Function<? super T, ? extends V> valueFunction) {
         return Collector.of(
                 LinkedHashMap<K, V>::new,
                 (map, t) -> putOrThrow(map, keyFunction.apply(t), valueFunction.apply(t)),
@@ -136,9 +130,9 @@ public final class GuavaCompat {
      * Memoizes {@code delegate} in a supplier that implements both guava's and
      * {@code java.util.function.Supplier}.
      *
-     * <p>Since guava 21, guava's {@link Supplier} extends the JDK one, and DFU,
-     * compiled against guava 32, uses the memoized result as either. Guava 17
-     * has no such bridge, so its own memoizer fails the cast at the use site.
+     * <p>guava 21's {@link Supplier} extends the JDK one, which DFU (compiled
+     * against guava 32) relies on; guava 17 has no such bridge, so its own
+     * memoizer fails the cast at the use site.
      */
     public static <T> Supplier<T> memoize(Supplier<T> delegate) {
         if (delegate instanceof MemoizingSupplier) {
@@ -164,19 +158,17 @@ public final class GuavaCompat {
     }
 
     private static MethodHandle findIsSupertypeOf() {
-        for (String name : new String[]{"isAssignableFrom", "isSupertypeOf"}) {
+        for (String name : new String[] {"isAssignableFrom", "isSupertypeOf"}) {
             try {
-                return MethodHandles.publicLookup().findVirtual(TypeToken.class, name,
-                        MethodType.methodType(boolean.class, TypeToken.class));
+                return MethodHandles.publicLookup()
+                        .findVirtual(TypeToken.class, name, MethodType.methodType(boolean.class, TypeToken.class));
             } catch (NoSuchMethodException | IllegalAccessException ignored) {
             }
         }
-        throw new ExceptionInInitializerError(
-                "no TypeToken subtype check found on this guava");
+        throw new ExceptionInInitializerError("no TypeToken subtype check found on this guava");
     }
 
-    private static final class MemoizingSupplier<T>
-            implements Supplier<T>, java.util.function.Supplier<T> {
+    private static final class MemoizingSupplier<T> implements Supplier<T>, java.util.function.Supplier<T> {
         // Cleared after the first get, like guava's own memoizer: doubles as
         // the initialized flag and releases the delegate for collection.
         private volatile Supplier<T> delegate;
@@ -202,8 +194,7 @@ public final class GuavaCompat {
         @Override
         public String toString() {
             Supplier<T> d = delegate;
-            return "Suppliers.memoize("
-                    + (d == null ? "<supplier that returned " + value + ">" : d) + ")";
+            return "Suppliers.memoize(" + (d == null ? "<supplier that returned " + value + ">" : d) + ")";
         }
     }
 }

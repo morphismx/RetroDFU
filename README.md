@@ -63,8 +63,8 @@ The build runs the following steps in order:
    to the replacement implementation and redirects newer Guava / fastutil calls to compatibility classes.
 2. **`downgradeJar`**: converts the bytecode to Java 8 and replaces JDK 9+ API calls with stubs.
 3. **`shadeDowngradedApi`**: relocates the stubs under `dev.morphismx.retrodfu.shadow.jvmdg`.
-4. **`compatScan`**: verifies that every reference in the jar resolves against the dependencies of both games.
-5. **`verifyJar`**: checks the jar against the Java 8 API using animal-sniffer.
+4. **`scanJar`**: verifies that every reference in the jar resolves against the dependencies of both games.
+5. **`checkSignature`**: checks the jar against the Java 8 API using animal-sniffer.
 
 ## License
 

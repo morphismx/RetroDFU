@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,19 +27,14 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      - name: Build — jar, compatScan/verifyJar gates, all test lanes
+      - name: Build — jar, scanJar/checkSignature gates, all test lanes
         run: ./gradlew build
-
-      - name: Resolve version
-        run: |
-          version="$(./gradlew -q properties --property version | sed -n 's/^version: //p')"
-          test -n "$version"
-          echo "version=$version" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: retrodfu-${{ env.version }}
-          path: build/libs/retrodfu-${{ env.version }}.jar
+          path: |
+            build/libs/retrodfu-*.jar
+            !build/libs/retrodfu-*-*.jar
           if-no-files-found: error
           retention-days: 14
 

@@ -2,6 +2,8 @@
 asm = "9.11.1"
 classtransform = "1.15.1"
 jvmdg = "2.0.1"
+spotless = "8.10.2"
+openjavaformat = "21.0.2"
 animalSniffer = "1.29"
 java18Signature = "1.0"
 junit = "4.13.2"
@@ -21,6 +23,7 @@ mc1122-fastutil = "7.1.0" # 1.12.2 ships it; 1.7.10 ships none — the floor dow
 asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
 asm-commons = { module = "org.ow2.asm:asm-commons", version.ref = "asm" }
 classtransform-core = { module = "net.lenni0451.classtransform:core", version.ref = "classtransform" }
+classtransform-additionalclassprovider = { module = "net.lenni0451.classtransform:additionalclassprovider", version.ref = "classtransform" }
 
 jvmdg-java-api = { module = "xyz.wagyourtail.jvmdowngrader:jvmdowngrader-java-api", version.ref = "jvmdg" }
 
@@ -45,3 +48,5 @@ mc1122-fastutil = { module = "it.unimi.dsi:fastutil", version.ref = "mc1122-fast
 
 [plugins]
 jvmdg = { id = "xyz.wagyourtail.jvmdowngrader", version.ref = "jvmdg" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+openjavaformat = { id = "dev.openjavaformat.java-format", version.ref = "openjavaformat" }

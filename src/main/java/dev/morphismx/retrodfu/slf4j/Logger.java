@@ -3,7 +3,7 @@ package dev.morphismx.retrodfu.slf4j;
 /**
  * Replacement for {@code org.slf4j.Logger}.
  *
- * <p>{@code TypeRenameTransformer}'s build-time remap renames every slf4j
+ * <p>The {@code renames} map in the transformer configs renames every slf4j
  * reference to this type without touching call sites, so this interface must
  * keep the shape of slf4j's. It declares only the methods DFU calls.
  */
