@@ -1,7 +1,7 @@
-import dev.morphismx.retrodfu.task.CheckSignature
-import dev.morphismx.retrodfu.task.PatchFiles
-import dev.morphismx.retrodfu.task.PatchJar
-import dev.morphismx.retrodfu.task.ScanJar
+import net.morphismmc.retrodfu.task.CheckSignature
+import net.morphismmc.retrodfu.task.PatchFiles
+import net.morphismmc.retrodfu.task.PatchJar
+import net.morphismmc.retrodfu.task.ScanJar
 import org.gradle.api.tasks.testing.logging.TestLogEvent
 import xyz.wagyourtail.jvmdg.gradle.task.DowngradeJar
 import xyz.wagyourtail.jvmdg.gradle.task.ShadeJar
@@ -16,7 +16,7 @@ plugins {
     id("retrodfu")
 }
 
-group = "dev.morphismx"
+group = "net.morphismmc"
 version = "11.0.22"
 
 java {
@@ -171,8 +171,8 @@ tasks.named<DowngradeJar>("downgradeJar") {
 
 val shadeDowngradedApi = tasks.named<ShadeJar>("shadeDowngradedApi") {
     group = taskGroup
-    description = "Shades the used JvmDG api stubs into the jar under dev/morphismx/retrodfu/shadow/jvmdg"
-    shadePath = "dev/morphismx/retrodfu/shadow/jvmdg/"
+    description = "Shades the used JvmDG api stubs into the jar under net/morphismmc/retrodfu/shadow/jvmdg"
+    shadePath = "net/morphismmc/retrodfu/shadow/jvmdg/"
     archiveClassifier = ""
 }
 
@@ -197,7 +197,7 @@ val scanJar = tasks.register<ScanJar>("scanJar") {
     group = taskGroup
     description = "Jar gate: entry allowlist, bytecode major, forbidden references, member resolution on the MC baselines"
     inputJar = shadeDowngradedApi.flatMap { it.archiveFile }
-    selfPrefixes = listOf("com/mojang/", "dev/morphismx/retrodfu/")
+    selfPrefixes = listOf("com/mojang/", "net/morphismmc/retrodfu/")
     fun baseline(prefix: String, vararg sources: Any) {
         baselines.add(project.objects.newInstance(ScanJar.Baseline::class.java).apply {
             this.prefix.set(prefix)

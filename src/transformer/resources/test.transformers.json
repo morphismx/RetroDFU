@@ -1,8 +1,8 @@
 {
-  "package": "dev.morphismx.retrodfu",
+  "package": "net.morphismmc.retrodfu",
   "renames": {
-    "org.slf4j.Logger": "dev.morphismx.retrodfu.slf4j.Logger",
-    "org.slf4j.LoggerFactory": "dev.morphismx.retrodfu.slf4j.LoggerFactory"
+    "org.slf4j.Logger": "net.morphismmc.retrodfu.slf4j.Logger",
+    "org.slf4j.LoggerFactory": "net.morphismmc.retrodfu.slf4j.LoggerFactory"
   },
   "transformers": [
     "CodecTestsTransformer"

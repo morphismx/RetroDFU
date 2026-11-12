@@ -22,16 +22,16 @@ and their semantics are in `src/AGENTS.md`.
 
 `scanJar` (`task/ScanJar`, engine `ClassScanner`) fails when:
 
-- the jar has entries outside `com/mojang/datafixers/`, `com/mojang/serialization/`, `dev/morphismx/retrodfu/` and
+- the jar has entries outside `com/mojang/datafixers/`, `com/mojang/serialization/`, `net/morphismmc/retrodfu/` and
   `META-INF/`;
 - a class exceeds major 52, or `module-info` / `META-INF/versions` is present;
-- forbidden references remain outside the shadow trees (our own `dev/morphismx/retrodfu/` classes are exempt from the
+- forbidden references remain outside the shadow trees (our own `net/morphismmc/retrodfu/` classes are exempt from the
   string match, since the JvmDG stubs name their unrelocated selves and javadocs name slf4j): `org/slf4j`,
   unrelocated `xyz/wagyourtail`, `java/lang/Record`, `java/lang/runtime/`, `StringConcatFactory`;
 - a gson member ref doesn't resolve on both gson 2.2.4 (1.7.10) and 2.8.0 (1.12.2), a guava member ref doesn't resolve
   on both guava 17.0 and 21.0, a fastutil member ref doesn't resolve on fastutil 7.1.0, or a log4j member ref doesn't
   resolve on both log4j-api 2.0-beta9 and 2.8.1;
-- a `com.mojang.*` / `dev.morphismx.*` member ref doesn't resolve inside the jar, including through bundled interfaces;
+- a `com.mojang.*` / `net.morphismmc.*` member ref doesn't resolve inside the jar, including through bundled interfaces;
 - any other referenced type resolves nowhere (jar, JDK, or a baseline jar).
 
 The report goes to `build/reports/retro/scan-jar.txt`. `task/CheckSignature` backs `checkSignature`: animal-sniffer

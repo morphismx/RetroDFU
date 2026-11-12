@@ -10,7 +10,7 @@ spotless {
     }
 }
 
-group = "dev.morphismx.retrodfu"
+group = "net.morphismmc.retrodfu"
 
 repositories {
     mavenCentral()
@@ -35,7 +35,7 @@ gradlePlugin {
     plugins {
         create("retrodfu") {
             id = "retrodfu"
-            implementationClass = "dev.morphismx.retrodfu.RetroDFUPlugin"
+            implementationClass = "net.morphismmc.retrodfu.RetroDFUPlugin"
         }
     }
 }

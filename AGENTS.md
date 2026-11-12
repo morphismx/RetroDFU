@@ -63,7 +63,7 @@ patchJar             ClassTransform over the upstream jar — type renames
                        — repacked with our classes
                        + licenses merged in
   -> downgradeJar      JvmDG: class major 69 -> 52, JDK 9+ API calls -> stubs
-  -> shadeDowngradedApi  JvmDG api stubs shaded under dev/morphismx/retrodfu/shadow/jvmdg
+  -> shadeDowngradedApi  JvmDG api stubs shaded under net/morphismmc/retrodfu/shadow/jvmdg
   -> scanJar, checkSignature
 ```
 
@@ -137,7 +137,7 @@ The READMEs carry no version number; touch them only if requirements or behavior
 
 ## Publishing
 
-Coordinates: `dev.morphismx:retrodfu:<version>`. The publication contains the final jar and the sources jar, with an
+Coordinates: `net.morphismmc:retrodfu:<version>`. The publication contains the final jar and the sources jar, with an
 empty dependency list and no Gradle module metadata. The sources jar carries upstream's pre-patch sources — they still
 show `org.slf4j` and newer guava/fastutil calls that the bytecode redirects at build time. The target Maven repository
 is not decided yet; until then it publishes to `mavenLocal` only.

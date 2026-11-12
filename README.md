@@ -34,7 +34,7 @@ Java 8 or later, and the following libraries on the classpath. The table lists t
 ```kotlin
 repositories { mavenLocal() }
 
-dependencies { implementation("dev.morphismx:retrodfu:<version>") }
+dependencies { implementation("net.morphismmc:retrodfu:<version>") }
 ```
 
 ## Building
@@ -62,7 +62,7 @@ The build runs the following steps in order:
 1. **`patchJar`**: applies [ClassTransform](https://github.com/Lenni0451/ClassTransform) transformers — renames slf4j
    to the replacement implementation and redirects newer Guava / fastutil calls to compatibility classes.
 2. **`downgradeJar`**: converts the bytecode to Java 8 and replaces JDK 9+ API calls with stubs.
-3. **`shadeDowngradedApi`**: relocates the stubs under `dev.morphismx.retrodfu.shadow.jvmdg`.
+3. **`shadeDowngradedApi`**: relocates the stubs under `net.morphismmc.retrodfu.shadow.jvmdg`.
 4. **`scanJar`**: verifies that every reference in the jar resolves against the dependencies of both games.
 5. **`checkSignature`**: checks the jar against the Java 8 API using animal-sniffer.
 

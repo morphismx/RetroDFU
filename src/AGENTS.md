@@ -5,18 +5,18 @@ patch upstream. Project-wide environment, commands, pipeline wiring and gates ar
 
 ## `main` source set
 
-- `main/java/dev/morphismx/retrodfu/guava/GuavaCompat`, `.../fastutil/FastutilCompat`: the compatibility
+- `main/java/net/morphismmc/retrodfu/guava/GuavaCompat`, `.../fastutil/FastutilCompat`: the compatibility
   implementations, one class per third-party library. They compile on JDK 25 against the oldest game deps (gson 2.2.4,
   guava 17.0, fastutil 7.1.0, log4j-api 2.0-beta9) as `compileOnly`, so only members that exist on
   every supported game version resolve; the classes are then downgraded together with the rest of the jar.
   scanJar re-checks this against the baselines.
-- `main/java/dev/morphismx/retrodfu/slf4j/`: the slf4j replacement (`Logger`, `LoggerFactory`, `LoggerImpl`
+- `main/java/net/morphismmc/retrodfu/slf4j/`: the slf4j replacement (`Logger`, `LoggerFactory`, `LoggerImpl`
   forwarding to log4j2), swapped in by the `renames` map in the transformer configs. Same compile baselines.
 - `main/resources/META-INF/licenses/`: licenses of everything bundled.
 
 ## Jar constraints
 
-- Shipped classes must live under `dev/morphismx/retrodfu/` — the gate only also allows the patched
+- Shipped classes must live under `net/morphismmc/retrodfu/` — the gate only also allows the patched
   `com/mojang/*` trees and `META-INF/` entries.
 - `org/slf4j`, `java/lang/Record`, `java/lang/runtime/` and `StringConcatFactory`
   references must never survive into the jar. JvmDG rewrites JDK 9+ call sites; `scanJar` catches what
@@ -31,7 +31,7 @@ redirected to GuavaCompat/FastutilCompat, which stick to guava-17 / fastutil-7.1
 
 ## `transformer` source set
 
-- `transformer/java/dev/morphismx/retrodfu/`: the ClassTransform transformer classes
+- `transformer/java/net/morphismmc/retrodfu/`: the ClassTransform transformer classes
   (`net.lenni0451.classtransform:core`, mixin style) in one flat package. Each affected DFU class gets a
   `@CTransformer` abstract class whose `@CRedirect` methods forward once to a `GuavaCompat`/`FastutilCompat`
   static method; the transformer itself must hold no fields or helpers, because every non-annotation member is
