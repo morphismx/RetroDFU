@@ -22,44 +22,54 @@ import org.gradle.api.tasks.*;
 
 /**
  * Runs {@link ClassScanner} over the final jar and writes a report file, which
- * makes the task up-to-date checkable and cacheable. The gate rules live in
- * {@code RULES}; {@link Baseline} pairs an owner prefix with the jars that
- * every matching member reference must resolve against.
+ * makes the task up-to-date checkable and cacheable. The gate rules are task
+ * inputs configured by the build script; {@link Baseline} pairs an owner prefix
+ * with the jars that every matching member reference must resolve against.
  */
 @CacheableTask
 public abstract class ScanJar extends DefaultTask {
-    /**
-     * A needle naming the JvmDG stub/exception trees counts as an unrelocated
-     * leak; other mentions are incidental strings.
-     */
-    private static final List<String> STUB_OR_EXC = List.of("/stub/", "/exc/", ".stub.", ".exc.");
-
-    private static final Rules RULES = new Rules(
-            List.of(
-                    "com/mojang/datafixers/", "com/mojang/serialization/",
-                    "net/morphismmc/retrodfu/", "META-INF/"),
-            // Multi-release content would sneak Java 9+ classes past the major check.
-            List.of("META-INF/versions/"),
-            52,
-            // Our own classes legitimately carry the needles: the JvmDG stubs
-            // name their unrelocated selves and transformer-facing javadocs
-            // name slf4j. Member resolution still runs on every class.
-            List.of("net/morphismmc/retrodfu/"),
-            // A needle that is the tail of a relocated stub path is the
-            // payload, not a leak.
-            List.of("net/morphismmc/retrodfu/shadow/jvmdg/"),
-            List.of(
-                    new Needle("org/slf4j"),
-                    new Needle("org.slf4j"),
-                    new Needle("xyz/wagyourtail", STUB_OR_EXC),
-                    new Needle("xyz.wagyourtail", STUB_OR_EXC),
-                    new Needle("java/lang/Record"),
-                    new Needle("java/lang/runtime/"),
-                    new Needle("StringConcatFactory")));
 
     @InputFile
     @PathSensitive(PathSensitivity.NONE)
     public abstract RegularFileProperty getInputJar();
+
+    /**
+     * Entry prefixes jar entries must live under; parent directories of an
+     * allowed prefix are allowed too.
+     */
+    @Input
+    public abstract ListProperty<String> getEntryPrefixes();
+
+    /**
+     * Entry prefixes jar entries must never live under.
+     */
+    @Input
+    public abstract ListProperty<String> getForbiddenEntryPrefixes();
+
+    /**
+     * The maximum class-file major version.
+     */
+    @Input
+    public abstract Property<Integer> getMaxMajor();
+
+    /**
+     * Entry prefixes exempt from the forbidden-needle byte scan.
+     */
+    @Input
+    public abstract ListProperty<String> getScanExemptPrefixes();
+
+    /**
+     * Contexts exempting a needle match: a needle that is the tail of one of
+     * these is payload, not a leak.
+     */
+    @Input
+    public abstract ListProperty<String> getExemptContexts();
+
+    /**
+     * The forbidden needles.
+     */
+    @Nested
+    public abstract ListProperty<ForbiddenNeedle> getForbidden();
 
     /**
      * In-jar namespaces whose member refs must resolve inside the jar.
@@ -86,10 +96,21 @@ public abstract class ScanJar extends DefaultTask {
             apiJars.put(b.getPrefix().get(), jars);
         }
 
+        List<Needle> forbidden = getForbidden().get().stream()
+                .map(n -> new Needle(n.getText().get(), n.getQualifiers().get()))
+                .toList();
+        Rules rules = new Rules(
+                getEntryPrefixes().get(),
+                getForbiddenEntryPrefixes().get(),
+                getMaxMajor().get(),
+                getScanExemptPrefixes().get(),
+                getExemptContexts().get(),
+                forbidden);
+
         // Scan before touching the report, so an I/O failure cannot leave a
         // truncated report behind.
         ClassScanner.Result result = ClassScanner.scan(
-                getInputJar().get().getAsFile(), RULES, getSelfPrefixes().get(), apiJars);
+                getInputJar().get().getAsFile(), rules, getSelfPrefixes().get(), apiJars);
 
         File report = getReportFile().get().getAsFile();
         File parent = report.getParentFile();
@@ -107,6 +128,18 @@ public abstract class ScanJar extends DefaultTask {
                     + "):\n - " + String.join("\n - ", result.problems()));
         }
         getLogger().lifecycle("scanJar OK: {} refs checked", result.refCount());
+    }
+
+    /**
+     * A forbidden byte string; non-empty qualifiers mean a match only counts
+     * when the token starting at it contains one of them.
+     */
+    public abstract static class ForbiddenNeedle {
+        @Input
+        public abstract Property<String> getText();
+
+        @Input
+        public abstract ListProperty<String> getQualifiers();
     }
 
     /**

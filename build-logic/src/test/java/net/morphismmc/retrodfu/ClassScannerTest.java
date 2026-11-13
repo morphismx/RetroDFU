@@ -25,7 +25,7 @@ import org.objectweb.asm.Opcodes;
  * whitelist (which — not selfPrefixes — gates jar entries); the
  * forbidden-bytes test goes under com/mojang/datafixers/ because our own
  * tree is exempt from the byte scan. {@link #RULES} mirrors the shapes of
- * the real gate; the production rules live in the task.
+ * the real gate; the production rules live in {@code build.gradle.kts}.
  */
 public class ClassScannerTest implements Opcodes {
 

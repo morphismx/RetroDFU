@@ -15,8 +15,10 @@ and their semantics are in `src/AGENTS.md`.
 - `ClassScanner`: the class-scan engine behind `scanJar` — entry allowlist, bytecode major cap, byte-scan
   needles and member resolution, all driven by a `Rules` parameter so the engine stays project-agnostic.
 - `task/`: Gradle task wrappers (`PatchJar`/`PatchFiles` sharing the `PatchTask` input interface,
-  `ScanJar`, `CheckSignature`). `task/ScanJar` holds the actual gate policy in its `RULES` constant —
-  the entry prefixes, the forbidden needles, the byte-scan exemptions and the `META-INF/versions` exclusion.
+  `ScanJar`, `CheckSignature`). `task/ScanJar` only declares the gate's inputs — the policy itself
+  (entry prefixes, forbidden needles, byte-scan exemptions, `META-INF/versions` exclusion) is
+  configured in `build.gradle.kts`'s `scanJar` registration, keeping the task type project-agnostic
+  like the engine.
 
 ## `scanJar` — jar gate rules
 
@@ -26,7 +28,7 @@ and their semantics are in `src/AGENTS.md`.
   `META-INF/`;
 - a class exceeds major 52, or `module-info` / `META-INF/versions` is present;
 - forbidden references remain outside the shadow trees (our own `net/morphismmc/retrodfu/` classes are exempt from the
-  string match, since the JvmDG stubs name their unrelocated selves and javadocs name slf4j): `org/slf4j`,
+  string match, since the JvmDG stubs name their unrelocated selves): `org/slf4j`,
   unrelocated `xyz/wagyourtail`, `java/lang/Record`, `java/lang/runtime/`, `StringConcatFactory`;
 - a gson member ref doesn't resolve on both gson 2.2.4 (1.7.10) and 2.8.0 (1.12.2), a guava member ref doesn't resolve
   on both guava 17.0 and 21.0, a fastutil member ref doesn't resolve on fastutil 7.1.0, or a log4j member ref doesn't

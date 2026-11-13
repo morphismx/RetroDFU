@@ -4,7 +4,7 @@ RetroDFU repackages Mojang's DataFixerUpper to run on Java 8 with Minecraft 1.7.
 patches and downgrades the upstream jar rather than forking it. Maintainer notes below; user-facing docs are
 in `README.md` and `README.zh-CN.md`, keep the two in sync.
 
-Area notes: `src/AGENTS.md` covers the shipped sources (compat classes, slf4j replacement, ClassTransform
+Area notes: `src/AGENTS.md` covers the shipped sources (compat classes, ClassTransform
 transformers, unit tests); `build-logic/AGENTS.md` covers the included build (`ClassPatcher`, task types,
 `ClassScanner` internals).
 
@@ -44,7 +44,7 @@ run `./gradlew check` before finishing.
 
 ## Layout
 
-- `src/`: everything shipped in the jar — compat classes, slf4j replacement, ClassTransform transformer
+- `src/`: everything shipped in the jar — compat classes, ClassTransform transformer
   classes/configs, licenses — plus our unit tests. Details in `src/AGENTS.md`.
 - `upstream/`: see Environment above. Its `src/test/java` (`CodecTests`, `RoundtripTest`) is upstream's checkout,
   compiled in place as the `upstreamTest` source set against upstream's real dependencies; every lane runs it.
@@ -58,8 +58,9 @@ run `./gradlew check` before finishing.
 
 ```
 patchJar             ClassTransform over the upstream jar — type renames
-                       (slf4j -> ours) + @CRedirect retargets (newer
-                       guava/fastutil members -> GuavaCompat/FastutilCompat)
+                       (slf4j -> log4j2) + @CRedirect retargets (newer
+                       guava/fastutil members -> GuavaCompat/FastutilCompat,
+                       fixed-arity log4j calls -> varargs)
                        — repacked with our classes
                        + licenses merged in
   -> downgradeJar      JvmDG: class major 69 -> 52, JDK 9+ API calls -> stubs
@@ -104,8 +105,8 @@ convention — fix failures with `./gradlew formatDiff` or `spotlessApply`.
 
 `scanJar` enforces the shipped jar's contract — allowed entry trees, class major 52, no
 slf4j/JvmDG/JDK-9+ references surviving the downgrade, and every member ref resolving on all game
-baselines and inside the jar. The full rule list lives next to the implementation in
-`build-logic/AGENTS.md`; the report goes to `build/reports/retro/scan-jar.txt`.
+baselines and inside the jar. The rules are configured in `build.gradle.kts`'s `scanJar` block and
+documented in `build-logic/AGENTS.md`; the report goes to `build/reports/retro/scan-jar.txt`.
 
 `checkSignature` runs animal-sniffer with the java18 signature and both game dependency sets on the classpath.
 

@@ -197,7 +197,34 @@ val scanJar = tasks.register<ScanJar>("scanJar") {
     group = taskGroup
     description = "Jar gate: entry allowlist, bytecode major, forbidden references, member resolution on the MC baselines"
     inputJar = shadeDowngradedApi.flatMap { it.archiveFile }
+    entryPrefixes = listOf(
+        "com/mojang/datafixers/", "com/mojang/serialization/",
+        "net/morphismmc/retrodfu/", "META-INF/"
+    )
+    // Multi-release content would sneak Java 9+ classes past the major check.
+    forbiddenEntryPrefixes = listOf("META-INF/versions/")
+    maxMajor = 52
+    // Our own classes legitimately carry the needles: the JvmDG stubs name
+    // their unrelocated selves. Member resolution still runs on every class.
+    scanExemptPrefixes = listOf("net/morphismmc/retrodfu/")
+    // A needle that is the tail of a relocated stub path is the payload, not a leak.
+    exemptContexts = listOf("net/morphismmc/retrodfu/shadow/jvmdg/")
     selfPrefixes = listOf("com/mojang/", "net/morphismmc/retrodfu/")
+    fun needle(text: String, vararg qualifiers: String) {
+        forbidden.add(project.objects.newInstance(ScanJar.ForbiddenNeedle::class.java).apply {
+            this.text.set(text)
+            this.qualifiers.set(qualifiers.toList())
+        })
+    }
+    needle("org/slf4j")
+    needle("org.slf4j")
+    // Only stub/exception-tree mentions count as unrelocated leaks; a bare
+    // "xyz/wagyourtail" is an incidental string.
+    needle("xyz/wagyourtail", "/stub/", "/exc/", ".stub.", ".exc.")
+    needle("xyz.wagyourtail", "/stub/", "/exc/", ".stub.", ".exc.")
+    needle("java/lang/Record")
+    needle("java/lang/runtime/")
+    needle("StringConcatFactory")
     fun baseline(prefix: String, vararg sources: Any) {
         baselines.add(project.objects.newInstance(ScanJar.Baseline::class.java).apply {
             this.prefix.set(prefix)

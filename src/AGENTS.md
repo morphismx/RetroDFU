@@ -10,8 +10,6 @@ patch upstream. Project-wide environment, commands, pipeline wiring and gates ar
   guava 17.0, fastutil 7.1.0, log4j-api 2.0-beta9) as `compileOnly`, so only members that exist on
   every supported game version resolve; the classes are then downgraded together with the rest of the jar.
   scanJar re-checks this against the baselines.
-- `main/java/net/morphismmc/retrodfu/slf4j/`: the slf4j replacement (`Logger`, `LoggerFactory`, `LoggerImpl`
-  forwarding to log4j2), swapped in by the `renames` map in the transformer configs. Same compile baselines.
 - `main/resources/META-INF/licenses/`: licenses of everything bundled.
 
 ## Jar constraints
@@ -45,8 +43,11 @@ redirected to GuavaCompat/FastutilCompat, which stick to guava-17 / fastutil-7.1
 
 ## Redirect semantics
 
-- The rewrite covers invokes, fields, types, descriptors, signatures, invokedynamic and method handles. Type renames are
-  pure renames, which stay legal only because our `Logger` mirrors slf4j's interface shape. `@CRedirect` pins a call
+- The rewrite covers invokes, fields, types, descriptors, signatures, invokedynamic and method handles. Type renames
+  retarget slf4j's `Logger`/`LoggerFactory` onto log4j2's `Logger`/`LogManager`, which stay legal only because every
+  member DFU calls exists on both game baselines — the fixed-arity `(String, Object, Object)` overloads being the one
+  gap on log4j-api 2.0-beta9, covered by `DataFixerBuilderTransformer`/`DataFixerBuilderResultTransformer` redirecting
+  those call sites onto the varargs overloads. `@CRedirect` pins a call
   site by containing method plus exact owner/name/descriptor; the handler is copied into the target class and an
   instance call's receiver becomes its first argument. A misspelled method or missing call site fails the build,
   and every registered transformer target must appear in the input — there is no "never matched" warning anymore.
