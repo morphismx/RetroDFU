@@ -1,10 +1,12 @@
 {
   "package": "net.morphismmc.retrodfu",
   "renames": {
-    "org.slf4j.Logger": "net.morphismmc.retrodfu.slf4j.Logger",
-    "org.slf4j.LoggerFactory": "net.morphismmc.retrodfu.slf4j.LoggerFactory"
+    "org.slf4j.Logger": "org.apache.logging.log4j.Logger",
+    "org.slf4j.LoggerFactory": "org.apache.logging.log4j.LogManager"
   },
   "transformers": [
+    "DataFixerBuilderResultTransformer",
+    "DataFixerBuilderTransformer",
     "DataFixerUpperTransformer",
     "FixedMapBuilderTransformer",
     "JavaOpsTransformer",

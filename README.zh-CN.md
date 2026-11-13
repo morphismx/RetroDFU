@@ -9,7 +9,7 @@ Minecraft 1.7.10 与 1.12.2 使用。
 
 - Java 8 字节码（class 版本 52），由 [JvmDowngrader](https://github.com/unimined/JvmDowngrader) 降级生成。
 - 使用游戏自带的 Gson、Guava 和 log4j2；对较新 Guava / fastutil API 的调用会被重定向到兼容类。
-- 两个游戏均不提供 slf4j，因此以转发到 log4j2 的轻量实现替代。
+- 两个游戏均不提供 slf4j，因此将其引用改写为两个游戏都自带的 log4j2 API。
 - 通过上游自带的 `CodecTests` 和 `RoundtripTest` 测试，在 Java 8 上分别使用 1.7.10 与 1.12.2 的依赖运行。
 
 ## 运行要求
@@ -59,7 +59,7 @@ git clone --recurse-submodules https://github.com/morphismx/RetroDFU.git
 构建依次执行以下步骤：
 
 1. **`patchJar`**：应用 [ClassTransform](https://github.com/Lenni0451/ClassTransform) 变换器——将 slf4j
-   重命名为替代实现，并将较新的 Guava / fastutil 调用重定向到兼容类。
+   的类型重命名为 log4j2 的对应类型，并将较新的 Guava / fastutil 调用重定向到兼容类。
 2. **`downgradeJar`**：将字节码转换为 Java 8，并将 JDK 9+ 的 API 调用替换为桩代码。
 3. **`shadeDowngradedApi`**：将桩代码重定位到 `net.morphismmc.retrodfu.shadow.jvmdg`。
 4. **`scanJar`**：验证 jar 中的所有引用在两个游戏版本的依赖上均可解析。
